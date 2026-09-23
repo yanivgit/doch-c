@@ -11,6 +11,7 @@ import SearchableDropdown from '../../../components/SearchableDropdown';
 import EditLocationModal from '../../../components/EditLocationModal';
 import { theme } from '../../../theme/theme';
 import { PLUGOT } from '../../../constants/data';
+import { Feather } from '@expo/vector-icons';
 
 export default function KashpalReportScreen() {
   const { selectedDohId, selectedDohName, selectedPlatoon, selectPlatoon, logout } = useApp();
@@ -152,9 +153,16 @@ export default function KashpalReportScreen() {
     
     return (
       <View style={styles.platoonProgressWrapper}>
-        <Text style={[styles.platoonProgressText, isDone && { color: theme.colors.success }]}>{isDone ? 'סיימת את הדו"ח בהצלחה! ✅' : `התקדמות: ${verified}/${total}`}</Text>
+        <View style={{flexDirection: 'row-reverse', justifyContent: 'space-between', marginBottom: 8}}>
+          <Text style={[styles.platoonProgressText, isDone && { color: theme.colors.success }]}>
+            {isDone ? 'סיימת את הדו"ח בהצלחה!' : `התקדמות:`}
+          </Text>
+          <Text style={[styles.platoonProgressText, isDone && { color: theme.colors.success }]}>
+            {verified}/{total}
+          </Text>
+        </View>
         <View style={styles.progressBarBg}>
-          <View style={[styles.progressBarFill, { width: `${percentage}%`, backgroundColor: isDone ? theme.colors.success : theme.colors.primary }]} />
+          <View style={[styles.progressBarFill, { width: `${percentage}%`, backgroundColor: isDone ? theme.colors.success : theme.colors.accent }]} />
         </View>
       </View>
     );
@@ -164,13 +172,14 @@ export default function KashpalReportScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <View style={styles.headerRow}>
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+          <Feather name="log-out" size={16} color={theme.colors.danger} />
           <Text style={styles.logoutButtonText}>התנתק</Text>
         </TouchableOpacity>
         <View style={styles.titleContainer}>
           <Text style={styles.title}>תצוגת ציוד (קשפ&quot;ל)</Text>
-          <Text style={styles.subtitle}>דו&quot;ח נוכחי: {selectedDohName || selectedDohId}</Text>
+          <Text style={styles.subtitle}>דו&quot;ח פעיל: {selectedDohName || selectedDohId}</Text>
         </View>
-        <View style={{ width: 60 }} />
+        <View style={{ width: 80 }} />
       </View>
 
 
@@ -205,18 +214,18 @@ export default function KashpalReportScreen() {
                   ListEmptyComponent={<Text style={styles.emptyText}>לא נמצא ציוד לפלוגה זו.</Text>}
                   renderItem={({ item: device }) => (
                     <View style={styles.deviceCard}>
-                      <View style={{ flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                        <View style={styles.deviceInfo}>
-                          <Text style={styles.deviceType}>{device.type}</Text>
-                          <Text style={styles.deviceTsadi}>צ&apos;: {device.tsadiNumber}</Text>
-                          {device.location ? (
-                            <Text style={styles.deviceSub}>מיקום: {device.location}</Text>
-                          ) : null}
-                        </View>
-                        <TouchableOpacity onPress={() => setEditingDevice(device)} style={styles.editLocationBtn}>
-                          <Text style={styles.editLocationIcon}>📍 עדכן מיקום</Text>
-                        </TouchableOpacity>
+                      <View style={styles.deviceInfo}>
+                        <Text style={styles.deviceType}>{device.type}</Text>
+                        <Text style={styles.deviceTsadi}>צ&apos;: <Text style={styles.tsadiHighlight}>{device.tsadiNumber}</Text></Text>
+                        {device.location ? (
+                          <View style={styles.tagContainer}>
+                            <Text style={styles.tagText}>{device.location}</Text>
+                          </View>
+                        ) : null}
                       </View>
+                      <TouchableOpacity onPress={() => setEditingDevice(device)} style={styles.iconButton}>
+                        <Feather name="map-pin" size={18} color={theme.colors.primary} />
+                      </TouchableOpacity>
                     </View>
                   )}
                 />
@@ -229,14 +238,18 @@ export default function KashpalReportScreen() {
                 return (
                   <View style={{ flex: 1 }}>
                     {isMyPlatoonCompleted ? (
-                      <View style={[styles.sessionBanner, styles.activeSessionBanner, { backgroundColor: 'rgba(16, 185, 129, 0.1)' }]}>
-                        <Text style={styles.sessionBannerTitle}>סיימת את הדו&quot;ח בהצלחה! ✅</Text>
+                      <View style={[styles.sessionBanner, styles.activeSessionBanner, { backgroundColor: 'rgba(16, 185, 129, 0.1)', borderColor: 'rgba(16, 185, 129, 0.3)' }]}>
+                        <Feather name="check-circle" size={24} color={theme.colors.success} style={{ marginBottom: 8 }} />
+                        <Text style={styles.sessionBannerTitle}>סיימת את הדו&quot;ח בהצלחה!</Text>
                         <Text style={styles.sessionBannerSub}>הקשר&quot;ג עודכן. תוכל להמשיך לסרוק אם נדרש.</Text>
                         {renderPlatoonProgress()}
                       </View>
                     ) : isMyPlatoonActive ? (
                       <View style={[styles.sessionBanner, styles.activeSessionBanner]}>
-                        <Text style={styles.sessionBannerTitle}>יש דו&quot;ח פעיל!</Text>
+                        <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                          <View style={styles.pulsingIndicator} />
+                          <Text style={styles.sessionBannerTitle}>יש דו&quot;ח פעיל!</Text>
+                        </View>
                         <Text style={styles.sessionBannerSub}>לחץ לחיצה ארוכה על הציוד כדי לאשר אותו.</Text>
                         {renderPlatoonProgress()}
                         <TouchableOpacity style={[styles.startSessionBtn, { backgroundColor: theme.colors.success }]} onPress={handleEndSession}>
@@ -245,9 +258,11 @@ export default function KashpalReportScreen() {
                       </View>
                     ) : (
                       <View style={[styles.sessionBanner, styles.noSessionBanner]}>
+                        <Feather name="info" size={24} color={theme.colors.textMuted} style={{ marginBottom: 8 }} />
                         <Text style={styles.sessionBannerTitle}>אין דו&quot;ח פעיל כרגע</Text>
                         <TouchableOpacity style={styles.startSessionBtn} onPress={handleStartSession}>
-                          <Text style={styles.startSessionBtnText}>התחל דו&quot;ח עצמאי לפלוגה</Text>
+                          <Feather name="play" size={18} color="#FFF" />
+                          <Text style={styles.startSessionBtnText}>התחל דו&quot;ח עצמאי</Text>
                         </TouchableOpacity>
                       </View>
                     )}
@@ -286,14 +301,16 @@ export default function KashpalReportScreen() {
                           >
                             <View style={styles.deviceInfo}>
                               <Text style={[styles.deviceType, isVerified && styles.verifiedText]}>{device.type}</Text>
-                              <Text style={[styles.deviceTsadi, isVerified && styles.verifiedText]}>צ&apos;: {device.tsadiNumber}</Text>
+                              <Text style={[styles.deviceTsadi, isVerified && styles.verifiedText]}>צ&apos;: <Text style={styles.tsadiHighlight}>{device.tsadiNumber}</Text></Text>
                               {device.location ? (
-                                <Text style={[styles.deviceSub, isVerified && styles.verifiedText]}>מיקום: {device.location}</Text>
+                                <View style={styles.tagContainer}>
+                                  <Text style={[styles.tagText, isVerified && styles.verifiedText]}>{device.location}</Text>
+                                </View>
                               ) : null}
                             </View>
                             {canVerify && (
                               <View style={[styles.checkbox, isVerified && styles.checkboxChecked]}>
-                                {isVerified ? <Text style={styles.checkboxIcon}>✓</Text> : null}
+                                {isVerified ? <Feather name="check" size={20} color="#FFF" /> : null}
                               </View>
                             )}
                           </TouchableOpacity>
@@ -351,88 +368,92 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 16,
+    padding: theme.spacing.lg,
+    paddingTop: theme.spacing.md,
     backgroundColor: theme.colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-    zIndex: 1,
+    ...(theme.elevation?.sm as object || {}),
+    zIndex: 10,
   },
   titleContainer: {
     alignItems: 'center',
   },
   title: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '800',
     color: theme.colors.text,
+    letterSpacing: -0.5,
   },
   subtitle: {
-    fontSize: 12,
+    fontSize: 13,
     color: theme.colors.textMuted,
     marginTop: 2,
+    fontWeight: '500',
   },
   logoutButton: {
-    padding: 8,
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    borderRadius: theme.borderRadius.sm,
-    minWidth: 60,
+    flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
+    gap: 6,
+    padding: theme.spacing.sm,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderRadius: theme.borderRadius.full,
   },
   logoutButtonText: {
-    fontSize: 16,
+    fontSize: 14,
     color: theme.colors.danger,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   selectorContainer: {
-    padding: 16,
-    backgroundColor: theme.colors.surface,
+    padding: 20,
+    backgroundColor: theme.colors.background,
     zIndex: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
   },
   label: {
     fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 8,
+    fontWeight: '800',
+    marginBottom: 12,
     textAlign: 'right',
     color: theme.colors.text,
   },
   tabContainer: {
     flexDirection: 'row-reverse',
-    backgroundColor: theme.colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceLight,
+    padding: 4,
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: theme.borderRadius.md,
   },
   tab: {
     flex: 1,
-    paddingVertical: 14,
+    paddingVertical: 10,
     alignItems: 'center',
-    borderBottomWidth: 3,
-    borderBottomColor: 'transparent',
+    borderRadius: theme.borderRadius.sm,
   },
   activeTab: {
-    borderBottomColor: theme.colors.primary,
+    backgroundColor: theme.colors.surface,
+    ...(theme.elevation?.sm as object || {}),
   },
   tabText: {
-    fontSize: 16,
+    fontSize: 15,
     color: theme.colors.textMuted,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
   activeTabText: {
     color: theme.colors.primary,
+    fontWeight: '800',
   },
   infoBanner: {
-    padding: 12,
-    backgroundColor: 'rgba(67, 56, 202, 0.15)', // Light primary tint
+    padding: 16,
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: 'rgba(59, 130, 246, 0.08)', 
     alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(67, 56, 202, 0.3)',
   },
   infoText: {
     fontSize: 14,
-    color: theme.colors.primary,
-    fontWeight: 'bold',
+    color: theme.colors.accent,
+    fontWeight: '700',
   },
   listContainer: {
     flex: 1,
@@ -451,6 +472,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: theme.colors.textMuted,
     fontSize: 16,
+    fontWeight: '500',
   },
   deviceCard: {
     backgroundColor: theme.colors.surface,
@@ -458,64 +480,73 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 20,
-    borderRadius: theme.borderRadius.md,
-    marginBottom: 16,
-    elevation: 2,
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    borderRightWidth: 4, // Switched to right for RTL
-    borderRightColor: theme.colors.primary,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.lg,
+    marginBottom: 12,
+    ...(theme.elevation?.sm as object || {}),
   },
   deviceInfo: {
     alignItems: 'flex-end',
+    flex: 1,
   },
   deviceType: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 17,
+    fontWeight: '800',
     color: theme.colors.text,
+    marginBottom: 4,
   },
   deviceTsadi: {
     fontSize: 14,
     color: theme.colors.textMuted,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  tsadiHighlight: {
+    color: theme.colors.text,
+  },
+  tagContainer: {
+    flexDirection: 'row-reverse',
+    gap: 6,
     marginTop: 4,
   },
-  deviceSub: {
-    fontSize: 14,
-    color: theme.colors.textMuted,
-    marginTop: 4,
-  },
-  editLocationBtn: {
-    padding: 8,
+  tagText: {
     backgroundColor: theme.colors.surfaceLight,
-    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: theme.borderRadius.full,
+    fontSize: 11,
+    color: theme.colors.textMuted,
+    fontWeight: '700',
+    overflow: 'hidden',
+  },
+  iconButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: theme.colors.surfaceLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sessionBanner: {
+    padding: 24,
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: theme.borderRadius.xl,
+    alignItems: 'center',
+    ...(theme.elevation?.md as object || {}),
+  },
+  activeSessionBanner: {
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.3)',
+  },
+  noSessionBanner: {
+    backgroundColor: theme.colors.surface,
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
-  editLocationIcon: {
-    fontSize: 14,
-    color: theme.colors.primary,
-    fontWeight: 'bold',
-  },
-  sessionBanner: {
-    padding: 20,
-    alignItems: 'center',
-    borderBottomWidth: 1,
-  },
-  activeSessionBanner: {
-    backgroundColor: 'rgba(59, 130, 246, 0.1)', // Light blue
-    borderBottomColor: 'rgba(59, 130, 246, 0.3)',
-  },
-  noSessionBanner: {
-    backgroundColor: theme.colors.surfaceLight,
-    borderBottomColor: theme.colors.border,
-  },
   sessionBannerTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '800',
     color: theme.colors.text,
     marginBottom: 4,
   },
@@ -523,70 +554,73 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: theme.colors.textMuted,
     textAlign: 'center',
+    fontWeight: '500',
+  },
+  pulsingIndicator: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: theme.colors.danger,
   },
   startSessionBtn: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 8,
     backgroundColor: theme.colors.primary,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: theme.borderRadius.sm,
-    marginTop: 12,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: theme.borderRadius.md,
+    marginTop: 16,
+    ...(theme.elevation?.sm as object || {}),
   },
   startSessionBtnText: {
     color: '#fff',
-    fontWeight: 'bold',
+    fontWeight: '700',
     fontSize: 16,
   },
   platoonProgressWrapper: {
     width: '100%',
-    marginTop: 15,
+    marginTop: 16,
   },
   platoonProgressText: {
-    textAlign: 'center',
-    fontWeight: 'bold',
-    marginBottom: 8,
-    color: theme.colors.primary,
+    fontWeight: '700',
+    color: theme.colors.text,
   },
   progressBarBg: {
     height: 12,
-    backgroundColor: '#fff',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.1)',
+    backgroundColor: theme.colors.surfaceLight,
+    borderRadius: theme.borderRadius.full,
     overflow: 'hidden',
     width: '100%',
+    flexDirection: 'row-reverse',
   },
   progressBarFill: {
     height: '100%',
+    borderRadius: theme.borderRadius.full,
   },
   deviceCardVerified: {
-    backgroundColor: 'rgba(16, 185, 129, 0.1)', // Light green tint
-    borderColor: theme.colors.success,
-    borderRightColor: theme.colors.success,
+    backgroundColor: 'rgba(16, 185, 129, 0.05)',
   },
   deviceCardReadOnly: {
-    opacity: 0.8,
+    opacity: 0.9,
   },
   verifiedText: {
-    opacity: 0.7,
+    opacity: 0.6,
+    textDecorationLine: 'line-through',
   },
   checkbox: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     borderWidth: 2,
-    borderColor: theme.colors.primary,
+    borderColor: theme.colors.textMuted,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 15,
-    backgroundColor: '#fff',
+    marginLeft: 16,
+    backgroundColor: theme.colors.surface,
   },
   checkboxChecked: {
     backgroundColor: theme.colors.success,
     borderColor: theme.colors.success,
-  },
-  checkboxIcon: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 18,
   }
 });

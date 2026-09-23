@@ -174,6 +174,26 @@ export const getAllLogs = async (): Promise<LogEvent[]> => {
   }
 };
 
+export const getLogsByDateRange = async (startDate: Date, endDate: Date): Promise<LogEvent[]> => {
+  try {
+    const q = query(
+      collection(db, 'logs'), 
+      where("timestamp", ">=", Timestamp.fromDate(startDate)),
+      where("timestamp", "<=", Timestamp.fromDate(endDate)),
+      orderBy("timestamp", "desc")
+    );
+    const querySnapshot = await getDocs(q);
+    const logs: LogEvent[] = [];
+    querySnapshot.forEach((doc) => {
+      logs.push({ id: doc.id, ...doc.data() } as LogEvent);
+    });
+    return logs;
+  } catch (error) {
+    console.error("Error getting logs by date range: ", error);
+    throw error;
+  }
+};
+
 export const getDeviceLogs = async (deviceId: string): Promise<LogEvent[]> => {
   try {
     const q = query(collection(db, 'logs'), where("deviceId", "==", deviceId));

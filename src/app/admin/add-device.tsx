@@ -59,7 +59,7 @@ export default function AddDeviceScreen() {
           onChangeText={setType}
         />
 
-        <Text style={styles.label}>מספר צ' (צדי)</Text>
+        <Text style={styles.label}>מספר צ&apos; (צדי)</Text>
         <TextInput
           style={styles.input}
           placeholder="לדוגמה: צ-123456"

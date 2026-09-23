@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, TextInput, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApp, UserRole } from '../context/AppContext';
 import { theme } from '../theme/theme';
 
 export default function RoleSelectionScreen() {
+  const router = useRouter();
   const { login } = useApp();
   const [showPinModal, setShowPinModal] = useState(false);
   const [pin, setPin] = useState('');
@@ -34,6 +36,17 @@ export default function RoleSelectionScreen() {
         <Text style={styles.title}>דו&quot;ח צ</Text>
         <Text style={styles.subtitle}>מערכת ניהול ציוד קשר</Text>
       </View>
+      
+      {/* Vercel Sync Indicator */}
+      <View style={{
+        position: 'absolute',
+        top: 20,
+        right: 20,
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+        backgroundColor: '#F97316', // Orange
+      }} />
 
       <View style={styles.roleSelection}>
         <Text style={styles.instruction}>בחר תפקיד להתחברות:</Text>
@@ -44,6 +57,10 @@ export default function RoleSelectionScreen() {
 
         <TouchableOpacity style={[styles.button, styles.buttonPrimary]} onPress={() => handleRoleSelect('Kashrag')}>
           <Text style={styles.buttonTextPrimary}>קשר&quot;ג (תצוגת גדוד)</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={[styles.button, { borderColor: theme.colors.accent, marginTop: 20 }]} onPress={() => router.push('/report/submit')}>
+          <Text style={[styles.buttonText, { color: theme.colors.accent }]}>הגש דיווח כללי / תקלה</Text>
         </TouchableOpacity>
       </View>
 

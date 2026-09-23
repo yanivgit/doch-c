@@ -14,6 +14,8 @@ import DeviceHistoryModal from '../../../components/DeviceHistoryModal';
 import Snackbar from '../../../components/Snackbar';
 import { theme } from '../../../theme/theme';
 import VerificationHistoryModal from '../../../components/VerificationHistoryModal';
+import { Feather } from '@expo/vector-icons';
+import DailySummaryModal from '../../../components/DailySummaryModal';
 
 export default function KashragReportScreen() {
   const { selectedDohId, selectedDohName, logout } = useApp();
@@ -31,6 +33,7 @@ export default function KashragReportScreen() {
   const [activeSession, setActiveSession] = useState<VerificationSession | null>(null);
   const [historyModalVisible, setHistoryModalVisible] = useState(false);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
+  const [auditTrailVisible, setAuditTrailVisible] = useState(false);
   const isArchivingRef = useRef(false);
 
   const fetchDevices = useCallback(async () => {
@@ -324,15 +327,22 @@ export default function KashragReportScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <View style={styles.headerRow}>
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+          <Feather name="log-out" size={16} color={theme.colors.danger} />
           <Text style={styles.logoutButtonText}>התנתק</Text>
         </TouchableOpacity>
         <View style={styles.titleContainer}>
           <Text style={styles.title}>ניהול דו&quot;ח צ (קשר&quot;ג)</Text>
-          <Text style={styles.subtitle}>דו&quot;ח נוכחי: {selectedDohName || selectedDohId}</Text>
+          <Text style={styles.subtitle}>דו&quot;ח פעיל: {selectedDohName || selectedDohId}</Text>
         </View>
-        <TouchableOpacity style={styles.copyButton} onPress={handleCopyReport}>
-          <Text style={styles.copyButtonText}>העתק דו&quot;ח</Text>
-        </TouchableOpacity>
+        <View style={{flexDirection: 'row-reverse', gap: 8}}>
+          <TouchableOpacity style={styles.copyButton} onPress={handleCopyReport}>
+            <Feather name="copy" size={16} color={theme.colors.accent} />
+            <Text style={styles.copyButtonText}>העתק</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.copyButton, {backgroundColor: 'rgba(59, 130, 246, 0.08)'}]} onPress={() => setAuditTrailVisible(true)}>
+            <Feather name="activity" size={16} color={theme.colors.primary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={{ flex: 1 }}>
@@ -353,26 +363,32 @@ export default function KashragReportScreen() {
                   {activeSession && activeSession.globalStatus !== 'pending' && activeSession.globalStatus !== 'archived' ? (
                     <View style={styles.activeSessionBoard}>
                       <View style={styles.boardHeader}>
-                        <Text style={styles.boardTitle}>🔴 דו&quot;ח יומי פעיל</Text>
+                        <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 8 }}>
+                          <View style={styles.pulsingIndicator} />
+                          <Text style={styles.boardTitle}>דו&quot;ח יומי פעיל</Text>
+                        </View>
                         {activeSession.globalStatus === 'active' ? (
-                          <View style={{flexDirection: 'row', gap: 10}}>
+                          <View style={{flexDirection: 'row', gap: 12}}>
                             <TouchableOpacity style={styles.resetSessionBtn} onPress={handleResetSession}>
-                              <Text style={styles.resetSessionBtnText}>איפוס דו&quot;ח</Text>
+                              <Feather name="refresh-ccw" size={14} color={theme.colors.danger} />
+                              <Text style={styles.resetSessionBtnText}>איפוס</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.endSessionBtn} onPress={handleEndSession}>
-                              <Text style={styles.endSessionBtnText}>סיום ושמירה</Text>
+                              <Text style={styles.endSessionBtnText}>סיים דו&quot;ח</Text>
                             </TouchableOpacity>
                           </View>
                         ) : null}
                       </View>
                       {renderStatusBars()}
                       {activeSession.globalStatus !== 'active' && (
-                        <View style={{flexDirection: 'row-reverse', gap: 10, marginTop: 16}}>
+                        <View style={{flexDirection: 'row-reverse', gap: 12, marginTop: 24}}>
                           <TouchableOpacity style={styles.startSessionBtn} onPress={handleStartSession}>
-                            <Text style={styles.startSessionBtnText}>פתח דו&quot;ח יומי (הפעל לכל הפלוגות)</Text>
+                            <Feather name="play" size={16} color="#FFF" />
+                            <Text style={styles.startSessionBtnText}>הפעל דו&quot;ח לכל הפלוגות</Text>
                           </TouchableOpacity>
                           <TouchableOpacity style={styles.historyLogsBtn} onPress={() => setHistoryModalVisible(true)}>
-                            <Text style={styles.historyLogsBtnText}>היסטוריית דוחות</Text>
+                            <Feather name="clock" size={16} color={theme.colors.primary} />
+                            <Text style={styles.historyLogsBtnText}>היסטוריה</Text>
                           </TouchableOpacity>
                         </View>
                       )}
@@ -392,13 +408,17 @@ export default function KashragReportScreen() {
                   )}
                 </View>
 
-                <View style={[styles.controlsContainer, { paddingHorizontal: 0, borderBottomWidth: 0, padding: 0 }]}>
-                  <TextInput 
-                    style={styles.searchInput}
-                    placeholder="חיפוש לפי מספר צ' או סוג..."
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                  />
+                <View style={[styles.controlsContainer, { paddingHorizontal: 0, borderBottomWidth: 0, padding: 0, marginTop: 8 }]}>
+                  <View style={styles.searchContainer}>
+                    <Feather name="search" size={20} color={theme.colors.textMuted} style={styles.searchIcon} />
+                    <TextInput 
+                      style={styles.searchInput}
+                      placeholder="חיפוש לפי צ' או סוג..."
+                      placeholderTextColor={theme.colors.textMuted}
+                      value={searchQuery}
+                      onChangeText={setSearchQuery}
+                    />
+                  </View>
                   
                   <View style={styles.toggleContainer}>
                     <TouchableOpacity 
@@ -429,33 +449,36 @@ export default function KashragReportScreen() {
                     <View key={device.id} style={styles.deviceRow}>
                       <View style={styles.actionButtons}>
                         <TouchableOpacity 
-                          style={styles.deleteButton} 
-                          onPress={() => device.id && handleDelete(device.id)}
-                        >
-                          <Text style={styles.deleteIcon}>🗑️</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                          style={styles.historyButton} 
-                          onPress={() => setHistoryDevice(device)}
-                        >
-                          <Text style={styles.historyIcon}>🕒</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                          style={styles.transferButton} 
+                          style={styles.iconButton} 
                           onPress={() => setTransferDevice(device)}
                         >
-                          <Text style={styles.transferIcon}>🔄</Text>
+                          <Feather name="repeat" size={18} color={theme.colors.textMuted} />
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                          style={styles.iconButton} 
+                          onPress={() => setHistoryDevice(device)}
+                        >
+                          <Feather name="clock" size={18} color={theme.colors.textMuted} />
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                          style={[styles.iconButton, styles.iconButtonDanger]} 
+                          onPress={() => device.id && handleDelete(device.id)}
+                        >
+                          <Feather name="trash-2" size={18} color={theme.colors.danger} />
                         </TouchableOpacity>
                       </View>
                       <View style={styles.deviceInfo}>
                         <Text style={styles.deviceType}>{device.type}</Text>
-                        <Text style={styles.deviceTsadi}>צ&apos;: {device.tsadiNumber}</Text>
+                        <Text style={styles.deviceTsadi}>צ&apos;: <Text style={styles.tsadiHighlight}>{device.tsadiNumber}</Text></Text>
                         {groupBy === 'types' ? (
-                          <Text style={styles.deviceSub}>
-                            שיוך: {device.assignment}{device.location ? ` | ${device.location}` : ''}
-                          </Text>
+                          <View style={styles.tagContainer}>
+                            <Text style={styles.tagText}>{device.assignment}</Text>
+                            {device.location ? <Text style={styles.tagText}>{device.location}</Text> : null}
+                          </View>
                         ) : device.location ? (
-                          <Text style={styles.deviceSub}>מיקום: {device.location}</Text>
+                          <View style={styles.tagContainer}>
+                            <Text style={styles.tagText}>{device.location}</Text>
+                          </View>
                         ) : null}
                       </View>
                     </View>
@@ -496,6 +519,11 @@ export default function KashragReportScreen() {
         onClose={() => setHistoryModalVisible(false)}
         dohId={selectedDohId || ''}
       />
+
+      <DailySummaryModal
+        visible={auditTrailVisible}
+        onClose={() => setAuditTrailVisible(false)}
+      />
       
       <Snackbar
         visible={snackbarVisible}
@@ -519,224 +547,233 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 16,
+    padding: theme.spacing.lg,
+    paddingTop: theme.spacing.md,
     backgroundColor: theme.colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    ...(theme.elevation?.sm as object || {}),
+    zIndex: 10, // For shadow on web
   },
   titleContainer: {
     alignItems: 'center',
   },
   title: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '800',
     color: theme.colors.text,
+    letterSpacing: -0.5,
   },
   subtitle: {
-    fontSize: 12,
+    fontSize: 13,
     color: theme.colors.textMuted,
     marginTop: 2,
+    fontWeight: '500',
   },
   logoutButton: {
-    padding: 8,
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    borderRadius: theme.borderRadius.sm,
-    minWidth: 60,
+    flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
+    gap: 6,
+    padding: theme.spacing.sm,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderRadius: theme.borderRadius.full,
   },
   logoutButtonText: {
-    fontSize: 16,
+    fontSize: 14,
     color: theme.colors.danger,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   copyButton: {
-    padding: 8,
-    backgroundColor: 'rgba(16, 185, 129, 0.1)', // Light green
-    borderRadius: theme.borderRadius.sm,
-    minWidth: 70,
+    flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
+    gap: 6,
+    padding: theme.spacing.sm,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(59, 130, 246, 0.08)', // Accent blue
+    borderRadius: theme.borderRadius.full,
   },
   copyButtonText: {
     fontSize: 14,
-    color: theme.colors.success,
-    fontWeight: 'bold',
+    color: theme.colors.accent,
+    fontWeight: '700',
   },
   statusBoardContainer: {
     paddingHorizontal: 20,
     paddingTop: 16,
-    backgroundColor: theme.colors.surface,
+    backgroundColor: 'transparent',
   },
   noSessionBoard: {
-    backgroundColor: theme.colors.surfaceLight,
-    padding: 20,
-    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.surface,
+    padding: theme.spacing.xl,
+    borderRadius: theme.borderRadius.lg,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    ...(theme.elevation?.md as object || {}),
   },
   noSessionText: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: theme.colors.textMuted,
+    marginBottom: theme.spacing.md,
   },
   startSessionBtn: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 8,
     backgroundColor: theme.colors.primary,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: theme.borderRadius.sm,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: theme.borderRadius.md,
+    ...(theme.elevation?.sm as object || {}),
   },
   startSessionBtnText: {
     color: '#fff',
-    fontWeight: 'bold',
+    fontWeight: '700',
     fontSize: 16,
   },
   historyLogsBtn: {
-    backgroundColor: 'transparent',
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: theme.colors.surfaceLight,
     paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: theme.borderRadius.sm,
-    borderWidth: 1,
-    borderColor: theme.colors.primary,
+    paddingVertical: 14,
+    borderRadius: theme.borderRadius.md,
   },
   historyLogsBtnText: {
     color: theme.colors.primary,
-    fontWeight: 'bold',
+    fontWeight: '700',
     fontSize: 16,
   },
   activeSessionBoard: {
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: theme.borderRadius.md,
-    borderWidth: 2,
-    borderColor: theme.colors.primary,
-    elevation: 3,
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    backgroundColor: theme.colors.surface,
+    padding: theme.spacing.xl,
+    borderRadius: theme.borderRadius.xl,
+    ...(theme.elevation?.lg as object || {}),
   },
   boardHeader: {
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-    paddingBottom: 10,
+    marginBottom: 24,
+  },
+  pulsingIndicator: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: theme.colors.danger,
+    // Add pulsing animation in a real implementation
   },
   boardTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '800',
     color: theme.colors.text,
   },
   endSessionBtn: {
     backgroundColor: theme.colors.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: theme.borderRadius.sm,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: theme.borderRadius.md,
+    ...(theme.elevation?.sm as object || {}),
   },
   endSessionBtnText: {
     color: '#fff',
     fontWeight: 'bold',
   },
   resetSessionBtn: {
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: theme.borderRadius.sm,
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(239, 68, 68, 0.05)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: theme.borderRadius.md,
   },
   resetSessionBtnText: {
     color: theme.colors.danger,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   progressContainer: {
-    gap: 12,
+    gap: 16,
   },
   progressBarRow: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
   },
   progressLabel: {
     width: 90,
     fontSize: 14,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: theme.colors.text,
     textAlign: 'right',
   },
   progressBarBg: {
     flex: 1,
-    height: 10,
+    height: 12,
     backgroundColor: theme.colors.surfaceLight,
-    borderRadius: 5,
+    borderRadius: theme.borderRadius.full,
     overflow: 'hidden',
     flexDirection: 'row-reverse',
   },
   progressBarFill: {
     height: '100%',
+    borderRadius: theme.borderRadius.full,
   },
   progressText: {
-    width: 40,
-    fontSize: 14,
+    width: 44,
+    fontSize: 13,
     textAlign: 'left',
+    fontWeight: '600',
     color: theme.colors.textMuted,
   },
-  doneIcon: {
-    fontSize: 14,
-  },
   controlsContainer: {
-    padding: 16,
+    padding: theme.spacing.lg,
+    backgroundColor: 'transparent',
+    marginBottom: theme.spacing.sm,
+  },
+  searchContainer: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
     backgroundColor: theme.colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-    marginBottom: 8,
+    borderRadius: theme.borderRadius.lg,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    ...(theme.elevation?.sm as object || {}),
+  },
+  searchIcon: {
+    marginLeft: 12,
   },
   searchInput: {
-    backgroundColor: theme.colors.background,
+    flex: 1,
     color: theme.colors.text,
-    padding: 12,
-    borderRadius: theme.borderRadius.sm,
+    paddingVertical: 16,
     fontSize: 16,
     textAlign: 'right',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    marginBottom: 12,
+    fontWeight: '500',
   },
   toggleContainer: {
     flexDirection: 'row',
-    backgroundColor: theme.colors.background,
-    borderRadius: theme.borderRadius.sm,
+    backgroundColor: theme.colors.surfaceLight,
+    borderRadius: theme.borderRadius.md,
     padding: 4,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
   },
   toggleButton: {
     flex: 1,
-    paddingVertical: 8,
+    paddingVertical: 10,
     alignItems: 'center',
-    borderRadius: 6,
+    borderRadius: theme.borderRadius.sm,
   },
   toggleButtonActive: {
-    backgroundColor: theme.colors.surfaceLight,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.3,
-    shadowRadius: 2,
+    backgroundColor: theme.colors.surface,
+    ...(theme.elevation?.sm as object || {}),
   },
   toggleText: {
-    fontSize: 14,
+    fontSize: 15,
     color: theme.colors.textMuted,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
   toggleTextActive: {
     color: theme.colors.primary,
+    fontWeight: '800',
   },
   center: {
     flex: 1,
@@ -749,76 +786,69 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     marginTop: 40,
     fontSize: 16,
+    fontWeight: '500',
   },
   deviceRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    padding: 20,
     backgroundColor: theme.colors.surface,
-    paddingHorizontal: 16,
-    borderRadius: theme.borderRadius.sm,
-    marginBottom: 8,
-    elevation: 1,
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    borderRadius: theme.borderRadius.lg,
+    marginBottom: 12,
+    ...(theme.elevation?.sm as object || {}),
   },
   deviceInfo: {
     alignItems: 'flex-end',
+    flex: 1,
+    paddingRight: 16,
   },
   deviceType: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 17,
+    fontWeight: '800',
     color: theme.colors.text,
+    marginBottom: 4,
   },
   deviceTsadi: {
     fontSize: 14,
     color: theme.colors.textMuted,
-    marginTop: 2,
+    fontWeight: '600',
+    marginBottom: 6,
   },
-  deviceSub: {
-    fontSize: 12,
+  tsadiHighlight: {
+    color: theme.colors.text,
+  },
+  tagContainer: {
+    flexDirection: 'row-reverse',
+    gap: 6,
+    marginTop: 4,
+  },
+  tagText: {
+    backgroundColor: theme.colors.surfaceLight,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: theme.borderRadius.full,
+    fontSize: 11,
     color: theme.colors.textMuted,
-    marginTop: 2,
+    fontWeight: '700',
+    overflow: 'hidden',
   },
   actionButtons: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 12,
   },
-  deleteButton: {
-    padding: 10,
-    backgroundColor: 'rgba(239, 68, 68, 0.2)', // Danger with opacity
-    borderRadius: theme.borderRadius.sm,
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.5)',
+  iconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.colors.surfaceLight,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  deleteIcon: {
-    fontSize: 18,
+  iconButtonDanger: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
   },
-  historyButton: {
-    padding: 10,
-    backgroundColor: 'rgba(245, 158, 11, 0.2)', // Warning with opacity
-    borderRadius: theme.borderRadius.sm,
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.5)',
-  },
-  historyIcon: {
-    fontSize: 18,
-  },
-  transferButton: {
-    padding: 10,
-    backgroundColor: 'rgba(67, 56, 202, 0.2)', // Primary with opacity
-    borderRadius: theme.borderRadius.sm,
-    borderWidth: 1,
-    borderColor: 'rgba(67, 56, 202, 0.5)',
-  },
-  transferIcon: {
-    fontSize: 18,
-  },
+
   fab: {
     position: 'absolute',
     bottom: 24,
