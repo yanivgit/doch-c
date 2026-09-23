@@ -52,9 +52,13 @@ export default function AddDeviceModal({ visible, onClose, onAdded }: AddDeviceM
       setLocation('');
       onAdded();
       onClose();
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      Alert.alert('שגיאה', 'שגיאה בהוספת הציוד');
+      if (error.message === 'DUPLICATE_TSADI') {
+        Alert.alert('שגיאה', 'מספר צ\' זה כבר קיים בפלוגה זו.');
+      } else {
+        Alert.alert('שגיאה', 'שגיאה בהוספת הציוד');
+      }
     } finally {
       setLoading(false);
     }

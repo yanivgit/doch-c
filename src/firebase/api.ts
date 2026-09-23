@@ -73,6 +73,19 @@ export interface BattalionMetadata {
 
 export const addDevice = async (device: Omit<Device, 'id'>) => {
   try {
+    // Check for duplicate Tsadi number in the same platoon and report
+    const q = query(
+      collection(db, 'devices'),
+      where("assignment", "==", device.assignment),
+      where("dohId", "==", device.dohId || '')
+    );
+    const querySnapshot = await getDocs(q);
+    const isDuplicate = querySnapshot.docs.some(doc => doc.data().tsadiNumber === device.tsadiNumber);
+    
+    if (isDuplicate) {
+      throw new Error('DUPLICATE_TSADI');
+    }
+
     const docRef = await addDoc(collection(db, 'devices'), {
       ...device,
       lastChecked: Timestamp.now()

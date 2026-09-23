@@ -62,6 +62,14 @@ export default function CycleSelectionScreen() {
 
   const handleCreateNew = async () => {
     if (!newCycleName.trim()) return;
+    
+    // Check for duplicates
+    const isDuplicate = cycles.some(c => c.name.toLowerCase() === newCycleName.trim().toLowerCase());
+    if (isDuplicate) {
+      Alert.alert('שגיאה', 'קיים כבר מסדר בשם זה. אנא בחר שם אחר למסדר.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       // 1. Create Firebase document (with 8s timeout)

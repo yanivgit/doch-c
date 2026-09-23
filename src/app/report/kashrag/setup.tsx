@@ -60,9 +60,13 @@ export default function RapidSetupScreen() {
         tzadeInputRef.current?.focus();
       }, 100);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert('שגיאה בהוספת הציוד. נסה שוב.');
+      if (error.message === 'DUPLICATE_TSADI') {
+        alert('מספר צ\' זה כבר קיים בפלוגה זו.');
+      } else {
+        alert('שגיאה בהוספת הציוד. נסה שוב.');
+      }
     } finally {
       setLoading(false);
     }

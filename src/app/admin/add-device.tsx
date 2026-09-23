@@ -33,8 +33,12 @@ export default function AddDeviceScreen() {
 
       Alert.alert('הצלחה', 'הציוד נוסף בהצלחה');
       router.back();
-    } catch {
-      Alert.alert('שגיאה', 'לא ניתן להוסיף ציוד. נסה שוב.');
+    } catch (error: any) {
+      if (error.message === 'DUPLICATE_TSADI') {
+        Alert.alert('שגיאה', 'מספר צ\' זה כבר קיים בפלוגה זו.');
+      } else {
+        Alert.alert('שגיאה', 'לא ניתן להוסיף ציוד. נסה שוב.');
+      }
     } finally {
       setLoading(false);
     }
