@@ -622,7 +622,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary,
     paddingHorizontal: 24,
     paddingVertical: 14,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: theme.borderRadius.full,
     ...(theme.elevation?.sm as object || {}),
   },
   startSessionBtnText: {
@@ -637,7 +637,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surfaceLight,
     paddingHorizontal: 20,
     paddingVertical: 14,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: theme.borderRadius.full,
   },
   historyLogsBtnText: {
     color: theme.colors.primary,
@@ -672,7 +672,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: theme.borderRadius.full,
     ...(theme.elevation?.sm as object || {}),
   },
   endSessionBtnText: {
@@ -686,7 +686,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(239, 68, 68, 0.05)',
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: theme.borderRadius.full,
   },
   resetSessionBtnText: {
     color: theme.colors.danger,
@@ -735,7 +735,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row-reverse',
     alignItems: 'center',
     backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.lg,
+    borderRadius: theme.borderRadius.full,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
     paddingHorizontal: 16,
     marginBottom: 16,
     ...(theme.elevation?.sm as object || {}),
@@ -754,14 +756,14 @@ const styles = StyleSheet.create({
   toggleContainer: {
     flexDirection: 'row',
     backgroundColor: theme.colors.surfaceLight,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: theme.borderRadius.full,
     padding: 4,
   },
   toggleButton: {
     flex: 1,
     paddingVertical: 10,
     alignItems: 'center',
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: theme.borderRadius.full,
   },
   toggleButtonActive: {
     backgroundColor: theme.colors.surface,
@@ -795,6 +797,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: 20,
     backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
     borderRadius: theme.borderRadius.lg,
     marginBottom: 12,
     ...(theme.elevation?.sm as object || {}),

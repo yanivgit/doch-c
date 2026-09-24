@@ -162,7 +162,7 @@ export default function KashpalReportScreen() {
           </Text>
         </View>
         <View style={styles.progressBarBg}>
-          <View style={[styles.progressBarFill, { width: `${percentage}%`, backgroundColor: isDone ? theme.colors.success : theme.colors.accent }]} />
+          <View style={[styles.progressBarFill, { width: `${percentage}%` }]} />
         </View>
       </View>
     );
@@ -480,6 +480,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 20,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
     borderRadius: theme.borderRadius.lg,
     marginBottom: 12,
     ...(theme.elevation?.sm as object || {}),
@@ -537,7 +539,7 @@ const styles = StyleSheet.create({
   activeSessionBanner: {
     backgroundColor: theme.colors.surface,
     borderWidth: 1,
-    borderColor: 'rgba(59, 130, 246, 0.3)',
+    borderColor: theme.colors.primary,
   },
   noSessionBanner: {
     backgroundColor: theme.colors.surface,
@@ -560,23 +562,25 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: theme.colors.danger,
+    backgroundColor: theme.colors.warning,
   },
   startSessionBtn: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
     backgroundColor: theme.colors.primary,
     paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: theme.borderRadius.md,
+    paddingVertical: 16,
+    borderRadius: theme.borderRadius.full,
     marginTop: 16,
+    width: '100%',
     ...(theme.elevation?.sm as object || {}),
   },
   startSessionBtnText: {
     color: '#fff',
     fontWeight: '700',
-    fontSize: 16,
+    fontSize: 18,
   },
   platoonProgressWrapper: {
     width: '100%',
@@ -597,9 +601,11 @@ const styles = StyleSheet.create({
   progressBarFill: {
     height: '100%',
     borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.success,
   },
   deviceCardVerified: {
     backgroundColor: 'rgba(16, 185, 129, 0.05)',
+    borderColor: theme.colors.success,
   },
   deviceCardReadOnly: {
     opacity: 0.9,

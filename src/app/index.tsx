@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: theme.colors.primary,
     marginBottom: 10,
-    textShadowColor: 'rgba(67, 56, 202, 0.2)',
+    textShadowColor: 'rgba(15, 76, 58, 0.2)', // Updated shadow color to match tactical green
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
   },
@@ -131,10 +131,10 @@ const styles = StyleSheet.create({
   },
   button: {
     backgroundColor: theme.colors.surface,
-    borderWidth: 2,
-    borderColor: theme.colors.primary,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
     padding: 16,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: theme.borderRadius.full,
     alignItems: 'center',
     marginBottom: 16,
     elevation: 2,
@@ -166,11 +166,12 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: theme.borderRadius.lg,
     padding: 24,
     width: '100%',
     maxWidth: 400,
     alignItems: 'center',
+    ...theme.elevation.lg,
   },
   modalTitle: {
     fontSize: 20,
@@ -182,7 +183,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: theme.borderRadius.full,
     width: '100%',
     padding: 16,
     fontSize: 24,
@@ -201,7 +202,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: theme.colors.border,
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: theme.borderRadius.full,
     marginLeft: 10,
   },
   modalButtonSubmit: {
@@ -209,7 +210,7 @@ const styles = StyleSheet.create({
     padding: 12,
     alignItems: 'center',
     backgroundColor: theme.colors.primary,
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: theme.borderRadius.full,
   },
   modalButtonTextCancel: {
     fontSize: 16,

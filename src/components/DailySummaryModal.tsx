@@ -120,7 +120,7 @@ export default function DailySummaryModal({ visible, onClose }: DailySummaryModa
         ) : (
           <FlatList
             data={logs}
-            keyExtractor={(item) => item.id}
+            keyExtractor={(item) => item.id || Math.random().toString()}
             contentContainerStyle={styles.listContent}
             ListEmptyComponent={
               <View style={styles.center}>
@@ -289,7 +289,9 @@ const styles = StyleSheet.create({
   },
   eventCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.lg,
     padding: 16,
     ...(theme.elevation?.sm as object || {}),
   },

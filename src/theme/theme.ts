@@ -2,12 +2,12 @@ import { Platform } from 'react-native';
 
 export const theme = {
   colors: {
-    background: '#F1F5F9', // Cool, slightly technical light gray
+    background: '#F9FAFB', // Cool, slightly technical light gray
     surface: '#FFFFFF', // Crisp white for elevated cards
     surfaceLight: '#F8FAFC', // Slightly darker surface for nested elements
-    primary: '#0F172A', // Midnight Slate (Brand/Tactical feel)
-    primaryHover: '#1E293B', // Lighter Slate
-    accent: '#3B82F6', // Vibrant Blue for primary actions
+    primary: '#0F4C3A', // Tactical green
+    primaryHover: '#1f2937', // Lighter Slate
+    accent: '#059669', // Vibrant Blue for primary actions
     success: '#10B981', // Emerald Green
     warning: '#F59E0B', // Amber
     danger: '#EF4444', // Crisp Red
@@ -26,9 +26,9 @@ export const theme = {
   },
   borderRadius: {
     sm: 8,
-    md: 12,
-    lg: 16,
-    xl: 24,
+    md: 16,
+    lg: 24,
+    xl: 32,
     full: 9999,
   },
   elevation: {
