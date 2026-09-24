@@ -18,7 +18,6 @@ export default function KashpalReportScreen() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeSession, setActiveSession] = useState<VerificationSession | null>(null);
-  const [activeTab, setActiveTab] = useState<'view' | 'audit'>('view');
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [editingDevice, setEditingDevice] = useState<Device | null>(null);
 
@@ -49,19 +48,13 @@ export default function KashpalReportScreen() {
       try {
         if (!snap.exists()) {
           setActiveSession(null);
-          setActiveTab('view');
           return;
         }
         const sessionData = { id: snap.id, ...snap.data() } as VerificationSession;
         if (sessionData.globalStatus === 'archived') {
           setActiveSession(null);
-          setActiveTab('view');
         } else {
           setActiveSession(sessionData);
-          const myPlatoonActive = sessionData.platoons?.[selectedPlatoon || '']?.status === 'active' || sessionData.globalStatus === 'active';
-          if (myPlatoonActive) {
-            setActiveTab('audit');
-          }
         }
       } catch (error) {
         console.error("Error processing snapshot:", error);
@@ -181,15 +174,6 @@ export default function KashpalReportScreen() {
       {selectedPlatoon ? (
         <View style={{ flex: 1, paddingHorizontal: 16 }}>
           
-          <View style={styles.tabContainer}>
-            <TouchableOpacity style={[styles.tab, activeTab === 'view' && styles.activeTab]} onPress={() => setActiveTab('view')}>
-              <Text style={[styles.tabText, activeTab === 'view' && styles.activeTabText]}>רשימת ציוד</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.tab, activeTab === 'audit' && styles.activeTab]} onPress={() => setActiveTab('audit')}>
-              <Text style={[styles.tabText, activeTab === 'audit' && styles.activeTabText]}>מסדר ציוד</Text>
-            </TouchableOpacity>
-          </View>
-
           <View style={styles.infoBanner}>
             <Text style={styles.infoText}>מציג ציוד עבור: {selectedPlatoon} ({devices.length} פריטים)</Text>
           </View>
@@ -200,47 +184,14 @@ export default function KashpalReportScreen() {
             </View>
           ) : (
             <View style={{ flex: 1 }}>
-              {activeTab === 'view' && (
-                <FlatList
-                  style={styles.listContainer}
-                  contentContainerStyle={{ paddingBottom: 100 }}
-                  keyboardShouldPersistTaps="handled"
-                  data={devices}
-                  keyExtractor={(device) => device.id || Math.random().toString()}
-                  ListEmptyComponent={<Text style={styles.emptyText}>לא נמצא ציוד לפלוגה זו.</Text>}
-                  renderItem={({ item: device }) => (
-                    <View style={styles.deviceCard}>
-                      <View style={styles.deviceCardRight}>
-                        <View style={[styles.deviceIconWrapper, { backgroundColor: 'rgba(59, 130, 246, 0.1)' }]}>
-                          <Feather name="cpu" size={20} color={theme.colors.accent} />
-                        </View>
-                        <View style={styles.deviceInfo}>
-                          <Text style={styles.deviceType}>{device.type}</Text>
-                          <Text style={styles.deviceTsadi}>מק"ט: {device.tsadiNumber}</Text>
-                        </View>
-                      </View>
-                      <View style={styles.deviceCardLeft}>
-                        {device.location && (
-                          <View style={styles.tagContainer}>
-                            <Text style={styles.tagText}>{device.location}</Text>
-                          </View>
-                        )}
-                        <TouchableOpacity onPress={() => setEditingDevice(device)} style={styles.iconButton}>
-                          <Feather name="map-pin" size={18} color={theme.colors.primary} />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  )}
-                />
-              )}
-
-              {activeTab === 'audit' && (() => {
+              {(() => {
                 const isMyPlatoonActive = activeSession?.platoons?.[selectedPlatoon]?.status === 'active' || activeSession?.globalStatus === 'active';
                 const isMyPlatoonCompleted = activeSession?.platoons?.[selectedPlatoon]?.status === 'completed';
+                const canVerify = isMyPlatoonActive || isMyPlatoonCompleted;
 
                 return (
                   <View style={{ flex: 1 }}>
-                    {(isMyPlatoonActive || isMyPlatoonCompleted) ? (
+                    {canVerify ? (
                       <View style={styles.sessionBanner}>
                         <View style={{ flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                           <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 8 }}>
@@ -263,6 +214,7 @@ export default function KashpalReportScreen() {
                       <View style={[styles.sessionBanner, styles.noSessionBanner]}>
                         <Feather name="info" size={24} color={theme.colors.textMuted} style={{ marginBottom: 8 }} />
                         <Text style={styles.sessionBannerTitle}>אין דו"ח פעיל כרגע</Text>
+                        <Text style={[styles.sessionBannerSub, { textAlign: 'center' }]}>התחל דו"ח כדי לסמן ציוד שנבדק</Text>
                         <TouchableOpacity style={styles.startSessionBtn} onPress={handleStartSession}>
                           <Feather name="play" size={18} color="#FFF" />
                           <Text style={styles.startSessionBtnText}>התחל דו"ח עצמאי</Text>
@@ -279,7 +231,7 @@ export default function KashpalReportScreen() {
                       ListEmptyComponent={<Text style={styles.emptyText}>לא נמצא ציוד לפלוגה זו.</Text>}
                       renderItem={({ item: device }) => {
                         const isVerified = device.id && activeSession?.verifiedDevices?.[device.id];
-                        const canVerify = isMyPlatoonActive || isMyPlatoonCompleted;
+                        
                         return (
                           <TouchableOpacity 
                             style={[
@@ -309,18 +261,25 @@ export default function KashpalReportScreen() {
                               <View style={styles.deviceInfo}>
                                 <Text style={[styles.deviceType, isVerified && styles.verifiedText]}>{device.type}</Text>
                                 <Text style={[styles.deviceTsadi, isVerified && styles.verifiedText]}>מק"ט: {device.tsadiNumber}</Text>
+                                {device.location && (
+                                  <Text style={styles.deviceLocationText}>📍 {device.location}</Text>
+                                )}
                               </View>
                             </View>
 
                             <View style={styles.deviceCardLeft}>
+                              <TouchableOpacity onPress={() => setEditingDevice(device)} style={styles.iconButton}>
+                                <Feather name="map-pin" size={18} color={theme.colors.textMuted} />
+                              </TouchableOpacity>
+                              
                               {isVerified && (
                                 <View style={styles.verifiedBadge}>
                                   <Text style={styles.verifiedBadgeText}>מאושר</Text>
                                 </View>
                               )}
-                              {canVerify && (
-                                <View style={[styles.checkbox, isVerified && styles.checkboxChecked]}>
-                                  {isVerified ? <Feather name="check" size={16} color="#FFF" /> : null}
+                              {canVerify && !isVerified && (
+                                <View style={styles.checkbox}>
+                                  {/* Empty checkbox waiting to be checked */}
                                 </View>
                               )}
                             </View>
@@ -328,8 +287,8 @@ export default function KashpalReportScreen() {
                         );
                       }}
                     />
-                </View>
-              );
+                  </View>
+                );
               })()}
             </View>
           )}
@@ -460,38 +419,6 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     color: theme.colors.text,
   },
-  tabContainer: {
-    flexDirection: 'row-reverse',
-    backgroundColor: '#F8FAFC',
-    padding: 6,
-    borderRadius: 9999,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderRadius: 9999,
-  },
-  activeTab: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  tabText: {
-    fontSize: 15,
-    color: theme.colors.textMuted,
-    fontWeight: '600',
-  },
-  activeTabText: {
-    color: theme.colors.primary,
-    fontWeight: '800',
-  },
   infoBanner: {
     paddingVertical: 8,
     alignItems: 'center',
@@ -556,6 +483,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: theme.colors.textMuted,
     fontWeight: '600',
+  },
+  deviceLocationText: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
+    marginTop: 4,
+    fontWeight: '500',
   },
   deviceCardLeft: {
     flexDirection: 'row-reverse',
