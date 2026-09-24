@@ -72,12 +72,15 @@ const VibrantLightTheme = {
   },
 };
 
+import { Feather } from '@expo/vector-icons';
+
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
     Heebo_400Regular,
     Heebo_500Medium,
     Heebo_700Bold,
     Heebo_800ExtraBold,
+    ...Feather.font,
   });
 
   if (!fontsLoaded) {

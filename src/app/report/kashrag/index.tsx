@@ -459,13 +459,13 @@ export default function KashragReportScreen() {
                           style={styles.iconButton} 
                           onPress={() => setTransferDevice(device)}
                         >
-                          <Feather name="repeat" size={18} color={theme.colors.textMuted} />
+                          <Feather name="repeat" size={18} color={theme.colors.primary} />
                         </TouchableOpacity>
                         <TouchableOpacity 
                           style={styles.iconButton} 
                           onPress={() => setHistoryDevice(device)}
                         >
-                          <Feather name="clock" size={18} color={theme.colors.textMuted} />
+                          <Feather name="clock" size={18} color={theme.colors.primary} />
                         </TouchableOpacity>
                         <TouchableOpacity 
                           style={[styles.iconButton, styles.iconButtonDanger]} 
@@ -897,15 +897,12 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    backgroundColor: 'rgba(15, 76, 58, 0.08)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   iconButtonDanger: {
     backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    borderColor: 'rgba(239, 68, 68, 0.2)',
   },
 
   fab: {
