@@ -36,16 +36,12 @@ export default function KashpalReportScreen() {
     }
   }, [selectedPlatoon, selectedDohId]);
 
-  // Effect 1: Fetch devices when platoon or doh changes
   useEffect(() => {
     fetchDevices();
   }, [selectedPlatoon, selectedDohId, fetchDevices]);
 
-  // Effect 2: Manage active session subscription based ONLY on dohId
   useEffect(() => {
-
     if (!selectedDohId) return;
-
     const docId = getDailyDocId(selectedDohId);
     const docRef = doc(db, 'verificationSessions', docId);
 
@@ -56,16 +52,12 @@ export default function KashpalReportScreen() {
           setActiveTab('view');
           return;
         }
-        
         const sessionData = { id: snap.id, ...snap.data() } as VerificationSession;
-        
         if (sessionData.globalStatus === 'archived') {
           setActiveSession(null);
           setActiveTab('view');
         } else {
           setActiveSession(sessionData);
-          
-          // Auto-switch to audit if this specific platoon is active or global is active
           const myPlatoonActive = sessionData.platoons?.[selectedPlatoon || '']?.status === 'active' || sessionData.globalStatus === 'active';
           if (myPlatoonActive) {
             setActiveTab('audit');
@@ -105,9 +97,9 @@ export default function KashpalReportScreen() {
       await startKashpalSession(selectedDohId, selectedPlatoon);
     } catch (e: any) {
       if (e.message === 'ARCHIVED') {
-        Alert.alert('שגיאה', 'הדו&quot;ח היומי כבר ננעל והועבר להיסטוריה על ידי הקשר&quot;ג.');
+        Alert.alert('שגיאה', 'הדו"ח היומי כבר ננעל והועבר להיסטוריה על ידי הקשר"ג.');
       } else {
-        Alert.alert('שגיאה', 'לא ניתן ליצור דו&quot;ח חדש');
+        Alert.alert('שגיאה', 'לא ניתן ליצור דו"ח חדש');
       }
     }
   };
@@ -154,10 +146,10 @@ export default function KashpalReportScreen() {
     return (
       <View style={styles.platoonProgressWrapper}>
         <View style={{flexDirection: 'row-reverse', justifyContent: 'space-between', marginBottom: 8}}>
-          <Text style={[styles.platoonProgressText, isDone && { color: theme.colors.success }]}>
-            {isDone ? 'סיימת את הדו"ח בהצלחה!' : `התקדמות:`}
+          <Text style={[styles.platoonProgressText, { color: theme.colors.primary }]}>
+            התקדמות
           </Text>
-          <Text style={[styles.platoonProgressText, isDone && { color: theme.colors.success }]}>
+          <Text style={[styles.platoonProgressText, { color: theme.colors.primary }]}>
             {verified}/{total}
           </Text>
         </View>
@@ -169,22 +161,26 @@ export default function KashpalReportScreen() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }}>
-      <View style={styles.headerRow}>
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Feather name="log-out" size={16} color={theme.colors.danger} />
-          <Text style={styles.logoutButtonText}>התנתק</Text>
+    <SafeAreaView style={styles.container}>
+      {/* Top Header */}
+      <View style={styles.topHeader}>
+        <TouchableOpacity style={styles.topHeaderIconOut} onPress={handleLogout}>
+          <Feather name="log-out" size={18} color={theme.colors.danger} />
         </TouchableOpacity>
-        <View style={styles.titleContainer}>
-          <Text style={styles.title}>תצוגת ציוד (קשפ&quot;ל)</Text>
-          <Text style={styles.subtitle}>דו&quot;ח פעיל: {selectedDohName || selectedDohId}</Text>
-        </View>
-        <View style={{ width: 80 }} />
+        <Text style={styles.topHeaderText}>דו"ח ציוד טקטי • מחזור א׳</Text>
+        <TouchableOpacity style={styles.topHeaderIconIn}>
+          <Feather name="user" size={18} color="#fff" />
+        </TouchableOpacity>
       </View>
 
+      <View style={styles.header}>
+        <Text style={styles.title}>Field Checklist</Text>
+        <Text style={styles.subtitle}>תצוגת ציוד פלוגתית</Text>
+      </View>
 
       {selectedPlatoon ? (
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, paddingHorizontal: 16 }}>
+          
           <View style={styles.tabContainer}>
             <TouchableOpacity style={[styles.tab, activeTab === 'view' && styles.activeTab]} onPress={() => setActiveTab('view')}>
               <Text style={[styles.tabText, activeTab === 'view' && styles.activeTabText]}>רשימת ציוד</Text>
@@ -207,25 +203,32 @@ export default function KashpalReportScreen() {
               {activeTab === 'view' && (
                 <FlatList
                   style={styles.listContainer}
-                  contentContainerStyle={{ paddingBottom: 40 }}
+                  contentContainerStyle={{ paddingBottom: 100 }}
                   keyboardShouldPersistTaps="handled"
                   data={devices}
                   keyExtractor={(device) => device.id || Math.random().toString()}
                   ListEmptyComponent={<Text style={styles.emptyText}>לא נמצא ציוד לפלוגה זו.</Text>}
                   renderItem={({ item: device }) => (
                     <View style={styles.deviceCard}>
-                      <View style={styles.deviceInfo}>
-                        <Text style={styles.deviceType}>{device.type}</Text>
-                        <Text style={styles.deviceTsadi}>צ&apos;: <Text style={styles.tsadiHighlight}>{device.tsadiNumber}</Text></Text>
-                        {device.location ? (
+                      <View style={styles.deviceCardRight}>
+                        <View style={[styles.deviceIconWrapper, { backgroundColor: 'rgba(59, 130, 246, 0.1)' }]}>
+                          <Feather name="cpu" size={20} color={theme.colors.accent} />
+                        </View>
+                        <View style={styles.deviceInfo}>
+                          <Text style={styles.deviceType}>{device.type}</Text>
+                          <Text style={styles.deviceTsadi}>מק"ט: {device.tsadiNumber}</Text>
+                        </View>
+                      </View>
+                      <View style={styles.deviceCardLeft}>
+                        {device.location && (
                           <View style={styles.tagContainer}>
                             <Text style={styles.tagText}>{device.location}</Text>
                           </View>
-                        ) : null}
+                        )}
+                        <TouchableOpacity onPress={() => setEditingDevice(device)} style={styles.iconButton}>
+                          <Feather name="map-pin" size={18} color={theme.colors.primary} />
+                        </TouchableOpacity>
                       </View>
-                      <TouchableOpacity onPress={() => setEditingDevice(device)} style={styles.iconButton}>
-                        <Feather name="map-pin" size={18} color={theme.colors.primary} />
-                      </TouchableOpacity>
                     </View>
                   )}
                 />
@@ -237,39 +240,39 @@ export default function KashpalReportScreen() {
 
                 return (
                   <View style={{ flex: 1 }}>
-                    {isMyPlatoonCompleted ? (
-                      <View style={[styles.sessionBanner, styles.activeSessionBanner, { backgroundColor: 'rgba(16, 185, 129, 0.1)', borderColor: 'rgba(16, 185, 129, 0.3)' }]}>
-                        <Feather name="check-circle" size={24} color={theme.colors.success} style={{ marginBottom: 8 }} />
-                        <Text style={styles.sessionBannerTitle}>סיימת את הדו&quot;ח בהצלחה!</Text>
-                        <Text style={styles.sessionBannerSub}>הקשר&quot;ג עודכן. תוכל להמשיך לסרוק אם נדרש.</Text>
-                        {renderPlatoonProgress()}
-                      </View>
-                    ) : isMyPlatoonActive ? (
-                      <View style={[styles.sessionBanner, styles.activeSessionBanner]}>
-                        <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                          <View style={styles.pulsingIndicator} />
-                          <Text style={styles.sessionBannerTitle}>יש דו&quot;ח פעיל!</Text>
+                    {(isMyPlatoonActive || isMyPlatoonCompleted) ? (
+                      <View style={styles.sessionBanner}>
+                        <View style={{ flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                          <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 8 }}>
+                            <Feather name="zap" size={20} color={theme.colors.warning} />
+                            <Text style={styles.sessionBannerTitle}>{isMyPlatoonCompleted ? 'הדו"ח הושלם!' : 'יש דו"ח פעיל!'}</Text>
+                          </View>
                         </View>
-                        <Text style={styles.sessionBannerSub}>לחץ לחיצה ארוכה על הציוד כדי לאשר אותו.</Text>
+                        <Text style={styles.sessionBannerSub}>לחץ לחיצה ארוכה על פריט לאישור קיומו בסד"כ</Text>
+                        
                         {renderPlatoonProgress()}
-                        <TouchableOpacity style={[styles.startSessionBtn, { backgroundColor: theme.colors.success }]} onPress={handleEndSession}>
-                          <Text style={styles.startSessionBtnText}>סיימתי דו&quot;ח</Text>
-                        </TouchableOpacity>
+                        
+                        {!isMyPlatoonCompleted && (
+                          <TouchableOpacity style={styles.startSessionBtn} onPress={handleEndSession}>
+                            <Feather name="check-circle" size={20} color="#fff" />
+                            <Text style={styles.startSessionBtnText}>סיימתי דיווח</Text>
+                          </TouchableOpacity>
+                        )}
                       </View>
                     ) : (
                       <View style={[styles.sessionBanner, styles.noSessionBanner]}>
                         <Feather name="info" size={24} color={theme.colors.textMuted} style={{ marginBottom: 8 }} />
-                        <Text style={styles.sessionBannerTitle}>אין דו&quot;ח פעיל כרגע</Text>
+                        <Text style={styles.sessionBannerTitle}>אין דו"ח פעיל כרגע</Text>
                         <TouchableOpacity style={styles.startSessionBtn} onPress={handleStartSession}>
                           <Feather name="play" size={18} color="#FFF" />
-                          <Text style={styles.startSessionBtnText}>התחל דו&quot;ח עצמאי</Text>
+                          <Text style={styles.startSessionBtnText}>התחל דו"ח עצמאי</Text>
                         </TouchableOpacity>
                       </View>
                     )}
 
                     <FlatList
                       style={styles.listContainer}
-                      contentContainerStyle={{ paddingBottom: 40 }}
+                      contentContainerStyle={{ paddingBottom: 100 }}
                       keyboardShouldPersistTaps="handled"
                       data={devices}
                       keyExtractor={(device) => device.id || Math.random().toString()}
@@ -299,20 +302,28 @@ export default function KashpalReportScreen() {
                             }}
                             disabled={!canVerify || !!isVerified}
                           >
-                            <View style={styles.deviceInfo}>
-                              <Text style={[styles.deviceType, isVerified && styles.verifiedText]}>{device.type}</Text>
-                              <Text style={[styles.deviceTsadi, isVerified && styles.verifiedText]}>צ&apos;: <Text style={styles.tsadiHighlight}>{device.tsadiNumber}</Text></Text>
-                              {device.location ? (
-                                <View style={styles.tagContainer}>
-                                  <Text style={[styles.tagText, isVerified && styles.verifiedText]}>{device.location}</Text>
-                                </View>
-                              ) : null}
-                            </View>
-                            {canVerify && (
-                              <View style={[styles.checkbox, isVerified && styles.checkboxChecked]}>
-                                {isVerified ? <Feather name="check" size={20} color="#FFF" /> : null}
+                            <View style={styles.deviceCardRight}>
+                              <View style={[styles.deviceIconWrapper, isVerified ? { backgroundColor: 'rgba(16, 185, 129, 0.15)' } : { backgroundColor: 'rgba(59, 130, 246, 0.1)' }]}>
+                                <Feather name="cpu" size={20} color={isVerified ? theme.colors.success : theme.colors.accent} />
                               </View>
-                            )}
+                              <View style={styles.deviceInfo}>
+                                <Text style={[styles.deviceType, isVerified && styles.verifiedText]}>{device.type}</Text>
+                                <Text style={[styles.deviceTsadi, isVerified && styles.verifiedText]}>מק"ט: {device.tsadiNumber}</Text>
+                              </View>
+                            </View>
+
+                            <View style={styles.deviceCardLeft}>
+                              {isVerified && (
+                                <View style={styles.verifiedBadge}>
+                                  <Text style={styles.verifiedBadgeText}>מאושר</Text>
+                                </View>
+                              )}
+                              {canVerify && (
+                                <View style={[styles.checkbox, isVerified && styles.checkboxChecked]}>
+                                  {isVerified ? <Feather name="check" size={16} color="#FFF" /> : null}
+                                </View>
+                              )}
+                            </View>
                           </TouchableOpacity>
                         );
                       }}
@@ -334,7 +345,7 @@ export default function KashpalReportScreen() {
           />
         </View>
       ) : (
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, paddingHorizontal: 20 }}>
           <View style={styles.selectorContainer}>
             <Text style={styles.label}>בחר את הפלוגה שלך:</Text>
             <View style={{ zIndex: 10 }}>
@@ -352,6 +363,26 @@ export default function KashpalReportScreen() {
         </View>
       )}
 
+      {/* Bottom Navigation Mock */}
+      <View style={styles.bottomNav}>
+        <View style={styles.navItem}>
+          <Feather name="briefcase" size={20} color={theme.colors.primary} />
+          <Text style={[styles.navText, {color: theme.colors.primary, fontWeight: '700'}]}>קשפ"ל</Text>
+        </View>
+        <View style={styles.navItem}>
+          <Feather name="plus-circle" size={20} color={theme.colors.textMuted} />
+          <Text style={styles.navText}>הוספת ציוד</Text>
+        </View>
+        <View style={styles.navItem}>
+          <Feather name="clock" size={20} color={theme.colors.textMuted} />
+          <Text style={styles.navText}>ציר זמן</Text>
+        </View>
+        <TouchableOpacity style={styles.navItem} onPress={handleLogout}>
+          <Feather name="log-out" size={20} color={theme.colors.textMuted} />
+          <Text style={styles.navText}>יציאה</Text>
+        </TouchableOpacity>
+      </View>
+
       <Snackbar
         visible={snackbarVisible}
         onDismiss={() => setSnackbarVisible(false)}
@@ -364,48 +395,62 @@ export default function KashpalReportScreen() {
 }
 
 const styles = StyleSheet.create({
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: theme.spacing.lg,
-    paddingTop: theme.spacing.md,
-    backgroundColor: theme.colors.surface,
-    ...(theme.elevation?.sm as object || {}),
-    zIndex: 10,
+  container: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
   },
-  titleContainer: {
+  topHeader: {
+    flexDirection: 'row-reverse',
+    width: '100%',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    marginBottom: 20,
+  },
+  topHeaderIconOut: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topHeaderIconIn: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: theme.colors.success,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topHeaderText: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
+    fontWeight: '600',
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: 20,
   },
   title: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: theme.colors.text,
-    letterSpacing: -0.5,
+    fontSize: 24,
+    fontWeight: '900',
+    color: theme.colors.primary,
   },
   subtitle: {
-    fontSize: 13,
-    color: theme.colors.textMuted,
-    marginTop: 2,
-    fontWeight: '500',
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    padding: theme.spacing.sm,
-    paddingHorizontal: 12,
-    backgroundColor: 'rgba(239, 68, 68, 0.08)',
-    borderRadius: theme.borderRadius.full,
-  },
-  logoutButtonText: {
-    fontSize: 14,
-    color: theme.colors.danger,
-    fontWeight: '700',
+    fontSize: 18,
+    color: theme.colors.text,
+    fontWeight: '800',
+    marginTop: 4,
   },
   selectorContainer: {
+    backgroundColor: theme.colors.surface,
     padding: 20,
-    backgroundColor: theme.colors.background,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    marginBottom: 20,
     zIndex: 10,
   },
   label: {
@@ -417,21 +462,26 @@ const styles = StyleSheet.create({
   },
   tabContainer: {
     flexDirection: 'row-reverse',
-    backgroundColor: theme.colors.surfaceLight,
-    padding: 4,
-    marginHorizontal: 16,
-    marginTop: 16,
-    borderRadius: theme.borderRadius.md,
+    backgroundColor: '#F8FAFC',
+    padding: 6,
+    borderRadius: 9999,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
   tab: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 12,
     alignItems: 'center',
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: 9999,
   },
   activeTab: {
-    backgroundColor: theme.colors.surface,
-    ...(theme.elevation?.sm as object || {}),
+    backgroundColor: '#FFFFFF',
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   tabText: {
     fontSize: 15,
@@ -443,126 +493,136 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   infoBanner: {
-    padding: 16,
-    marginHorizontal: 16,
-    marginTop: 16,
-    borderRadius: theme.borderRadius.md,
-    backgroundColor: 'rgba(59, 130, 246, 0.08)', 
+    paddingVertical: 8,
     alignItems: 'center',
+    marginBottom: 10,
   },
   infoText: {
     fontSize: 14,
-    color: theme.colors.accent,
-    fontWeight: '700',
+    color: theme.colors.textMuted,
+    fontWeight: '600',
   },
   listContainer: {
     flex: 1,
-    padding: 16,
-    backgroundColor: theme.colors.background,
   },
   center: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 1,
-    paddingHorizontal: 20,
-    backgroundColor: theme.colors.background,
   },
   emptyText: {
     textAlign: 'center',
     color: theme.colors.textMuted,
     fontSize: 16,
     fontWeight: '500',
+    marginTop: 40,
   },
   deviceCard: {
-    backgroundColor: theme.colors.surface,
+    backgroundColor: '#FFFFFF',
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
+    padding: 16,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    borderRadius: theme.borderRadius.lg,
+    borderRadius: 16,
     marginBottom: 12,
-    ...(theme.elevation?.sm as object || {}),
+  },
+  deviceCardRight: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    flex: 1,
+  },
+  deviceIconWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 16,
   },
   deviceInfo: {
     alignItems: 'flex-end',
     flex: 1,
   },
   deviceType: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '800',
     color: theme.colors.text,
     marginBottom: 4,
+    textAlign: 'right',
   },
   deviceTsadi: {
-    fontSize: 14,
+    fontSize: 13,
     color: theme.colors.textMuted,
     fontWeight: '600',
-    marginBottom: 6,
   },
-  tsadiHighlight: {
-    color: theme.colors.text,
+  deviceCardLeft: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+  },
+  verifiedBadge: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 9999,
+    marginRight: 12,
+  },
+  verifiedBadgeText: {
+    color: theme.colors.success,
+    fontSize: 12,
+    fontWeight: '700',
   },
   tagContainer: {
-    flexDirection: 'row-reverse',
-    gap: 6,
-    marginTop: 4,
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 9999,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
   tagText: {
-    backgroundColor: theme.colors.surfaceLight,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: theme.borderRadius.full,
     fontSize: 11,
     color: theme.colors.textMuted,
     fontWeight: '700',
-    overflow: 'hidden',
   },
   iconButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: theme.colors.surfaceLight,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: 8,
   },
   sessionBanner: {
-    padding: 24,
-    marginHorizontal: 16,
-    marginTop: 16,
-    borderRadius: theme.borderRadius.xl,
-    alignItems: 'center',
-    ...(theme.elevation?.md as object || {}),
-  },
-  activeSessionBanner: {
-    backgroundColor: theme.colors.surface,
+    padding: 20,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: theme.colors.primary,
+    borderColor: theme.colors.border,
+    borderRadius: 24,
+    marginBottom: 20,
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
   },
   noSessionBanner: {
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1,
+    alignItems: 'center',
     borderColor: theme.colors.border,
   },
   sessionBannerTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '900',
     color: theme.colors.text,
-    marginBottom: 4,
   },
   sessionBannerSub: {
-    fontSize: 14,
+    fontSize: 13,
     color: theme.colors.textMuted,
-    textAlign: 'center',
     fontWeight: '500',
-  },
-  pulsingIndicator: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: theme.colors.warning,
+    textAlign: 'right',
+    marginTop: 4,
+    marginBottom: 16,
   },
   startSessionBtn: {
     flexDirection: 'row-reverse',
@@ -572,39 +632,38 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary,
     paddingHorizontal: 24,
     paddingVertical: 16,
-    borderRadius: theme.borderRadius.full,
-    marginTop: 16,
+    borderRadius: 9999,
     width: '100%',
-    ...(theme.elevation?.sm as object || {}),
   },
   startSessionBtnText: {
     color: '#fff',
-    fontWeight: '700',
-    fontSize: 18,
+    fontWeight: '800',
+    fontSize: 16,
   },
   platoonProgressWrapper: {
     width: '100%',
-    marginTop: 16,
+    marginBottom: 20,
   },
   platoonProgressText: {
-    fontWeight: '700',
-    color: theme.colors.text,
+    fontWeight: '800',
+    fontSize: 14,
   },
   progressBarBg: {
-    height: 12,
-    backgroundColor: theme.colors.surfaceLight,
-    borderRadius: theme.borderRadius.full,
+    height: 8,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 9999,
     overflow: 'hidden',
     width: '100%',
     flexDirection: 'row-reverse',
+    marginTop: 8,
   },
   progressBarFill: {
     height: '100%',
-    borderRadius: theme.borderRadius.full,
+    borderRadius: 9999,
     backgroundColor: theme.colors.success,
   },
   deviceCardVerified: {
-    backgroundColor: 'rgba(16, 185, 129, 0.05)',
+    backgroundColor: '#FFFFFF',
     borderColor: theme.colors.success,
   },
   deviceCardReadOnly: {
@@ -612,21 +671,41 @@ const styles = StyleSheet.create({
   },
   verifiedText: {
     opacity: 0.6,
-    textDecorationLine: 'line-through',
   },
   checkbox: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     borderWidth: 2,
-    borderColor: theme.colors.textMuted,
+    borderColor: theme.colors.border,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 16,
-    backgroundColor: theme.colors.surface,
+    backgroundColor: '#FFFFFF',
   },
   checkboxChecked: {
     backgroundColor: theme.colors.success,
     borderColor: theme.colors.success,
-  }
+  },
+  bottomNav: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-around',
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 12,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  navItem: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  navText: {
+    fontSize: 10,
+    color: theme.colors.textMuted,
+    fontWeight: '500',
+  },
 });

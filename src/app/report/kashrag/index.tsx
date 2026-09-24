@@ -326,24 +326,30 @@ export default function KashragReportScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }}>
-      <View style={styles.headerRow}>
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Feather name="log-out" size={16} color={theme.colors.danger} />
-          <Text style={styles.logoutButtonText}>התנתק</Text>
+      <View style={styles.topHeader}>
+        <TouchableOpacity style={styles.topHeaderIconOut} onPress={handleLogout}>
+          <Feather name="log-out" size={18} color={theme.colors.danger} />
         </TouchableOpacity>
-        <View style={styles.titleContainer}>
-          <Text style={styles.title}>ניהול דו&quot;ח צ (קשר&quot;ג)</Text>
-          <Text style={styles.subtitle}>דו&quot;ח פעיל: {selectedDohName || selectedDohId}</Text>
-        </View>
-        <View style={{flexDirection: 'row-reverse', gap: 8}}>
-          <TouchableOpacity style={styles.copyButton} onPress={handleCopyReport}>
-            <Feather name="copy" size={16} color={theme.colors.accent} />
-            <Text style={styles.copyButtonText}>העתק</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.copyButton, {backgroundColor: 'rgba(59, 130, 246, 0.08)'}]} onPress={() => setAuditTrailVisible(true)}>
-            <Feather name="activity" size={16} color={theme.colors.primary} />
-          </TouchableOpacity>
-        </View>
+        <Text style={styles.topHeaderText}>דו"ח ציוד טקטי • מחזור א׳</Text>
+        <TouchableOpacity style={styles.topHeaderIconIn}>
+          <Feather name="shield" size={18} color="#fff" />
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.header}>
+        <Text style={styles.title}>Command Center</Text>
+        <Text style={styles.subtitle}>ניהול ציוד ודיווח (קשר"ג)</Text>
+      </View>
+
+      <View style={styles.actionRow}>
+        <TouchableOpacity style={styles.actionBtn} onPress={handleCopyReport}>
+          <Feather name="copy" size={16} color={theme.colors.accent} />
+          <Text style={styles.actionBtnText}>העתק דו"ח</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.actionBtn, {backgroundColor: 'rgba(59, 130, 246, 0.1)'}]} onPress={() => setAuditTrailVisible(true)}>
+          <Feather name="activity" size={16} color={theme.colors.primary} />
+          <Text style={[styles.actionBtnText, {color: theme.colors.primary}]}>יומן אירועים</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={{ flex: 1 }}>
@@ -526,6 +532,25 @@ export default function KashragReportScreen() {
         onClose={() => setAuditTrailVisible(false)}
       />
       
+      <View style={styles.bottomNav}>
+        <TouchableOpacity style={styles.navItem} onPress={handleLogout}>
+          <Feather name="log-out" size={20} color={theme.colors.textMuted} />
+          <Text style={styles.navText}>יציאה</Text>
+        </TouchableOpacity>
+        <View style={styles.navItem}>
+          <Feather name="clock" size={20} color={theme.colors.textMuted} />
+          <Text style={styles.navText}>ציר זמן</Text>
+        </View>
+        <TouchableOpacity style={styles.navItem} onPress={() => setModalVisible(true)}>
+          <Feather name="plus-circle" size={20} color={theme.colors.textMuted} />
+          <Text style={styles.navText}>הוספת ציוד</Text>
+        </TouchableOpacity>
+        <View style={styles.navItem}>
+          <Feather name="shield" size={20} color={theme.colors.primary} />
+          <Text style={[styles.navText, {color: theme.colors.primary, fontWeight: '700'}]}>קשר"ג</Text>
+        </View>
+      </View>
+
       <Snackbar
         visible={snackbarVisible}
         onDismiss={() => setSnackbarVisible(false)}
@@ -540,62 +565,73 @@ export default function KashragReportScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    paddingTop: 0,
-    backgroundColor: theme.colors.background,
+    paddingHorizontal: 20,
+    backgroundColor: '#FFFFFF',
   },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  topHeader: {
+    flexDirection: 'row-reverse',
+    width: '100%',
     justifyContent: 'space-between',
-    padding: theme.spacing.lg,
-    paddingTop: theme.spacing.md,
-    backgroundColor: theme.colors.surface,
-    ...(theme.elevation?.sm as object || {}),
-    zIndex: 10, // For shadow on web
-  },
-  titleContainer: {
     alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    marginBottom: 20,
+  },
+  topHeaderIconOut: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topHeaderIconIn: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: theme.colors.success,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topHeaderText: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
+    fontWeight: '600',
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: 20,
   },
   title: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: theme.colors.text,
-    letterSpacing: -0.5,
+    fontSize: 24,
+    fontWeight: '900',
+    color: theme.colors.primary,
   },
   subtitle: {
-    fontSize: 13,
-    color: theme.colors.textMuted,
-    marginTop: 2,
-    fontWeight: '500',
+    fontSize: 18,
+    color: theme.colors.text,
+    fontWeight: '800',
+    marginTop: 4,
   },
-  logoutButton: {
-    flexDirection: 'row',
+  actionRow: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  actionBtn: {
+    flexDirection: 'row-reverse',
     alignItems: 'center',
-    gap: 6,
-    padding: theme.spacing.sm,
-    paddingHorizontal: 12,
-    backgroundColor: 'rgba(239, 68, 68, 0.08)',
-    borderRadius: theme.borderRadius.full,
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    borderRadius: 9999,
   },
-  logoutButtonText: {
+  actionBtnText: {
     fontSize: 14,
-    color: theme.colors.danger,
     fontWeight: '700',
-  },
-  copyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    padding: theme.spacing.sm,
-    paddingHorizontal: 12,
-    backgroundColor: 'rgba(59, 130, 246, 0.08)', // Accent blue
-    borderRadius: theme.borderRadius.full,
-  },
-  copyButtonText: {
-    fontSize: 14,
     color: theme.colors.accent,
-    fontWeight: '700',
   },
   statusBoardContainer: {
     paddingHorizontal: 20,
@@ -603,11 +639,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   noSessionBoard: {
-    backgroundColor: theme.colors.surface,
+    backgroundColor: '#FFFFFF',
     padding: theme.spacing.xl,
-    borderRadius: theme.borderRadius.lg,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
     alignItems: 'center',
-    ...(theme.elevation?.md as object || {}),
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
   },
   noSessionText: {
     fontSize: 18,
@@ -618,37 +660,45 @@ const styles = StyleSheet.create({
   startSessionBtn: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
     backgroundColor: theme.colors.primary,
     paddingHorizontal: 24,
     paddingVertical: 14,
-    borderRadius: theme.borderRadius.full,
-    ...(theme.elevation?.sm as object || {}),
+    borderRadius: 9999,
   },
   startSessionBtnText: {
     color: '#fff',
-    fontWeight: '700',
+    fontWeight: '800',
     fontSize: 16,
   },
   historyLogsBtn: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: theme.colors.surfaceLight,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
     paddingHorizontal: 20,
     paddingVertical: 14,
-    borderRadius: theme.borderRadius.full,
+    borderRadius: 9999,
   },
   historyLogsBtnText: {
     color: theme.colors.primary,
-    fontWeight: '700',
+    fontWeight: '800',
     fontSize: 16,
   },
   activeSessionBoard: {
-    backgroundColor: theme.colors.surface,
+    backgroundColor: '#FFFFFF',
     padding: theme.spacing.xl,
-    borderRadius: theme.borderRadius.xl,
-    ...(theme.elevation?.lg as object || {}),
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
   },
   boardHeader: {
     flexDirection: 'row-reverse',
@@ -792,16 +842,15 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   deviceRow: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 20,
-    backgroundColor: theme.colors.surface,
+    padding: 16,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: theme.colors.border,
-    borderRadius: theme.borderRadius.lg,
+    borderRadius: 16,
     marginBottom: 12,
-    ...(theme.elevation?.sm as object || {}),
   },
   deviceInfo: {
     alignItems: 'flex-end',
@@ -809,16 +858,16 @@ const styles = StyleSheet.create({
     paddingRight: 16,
   },
   deviceType: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '800',
     color: theme.colors.text,
     marginBottom: 4,
+    textAlign: 'right',
   },
   deviceTsadi: {
-    fontSize: 14,
+    fontSize: 13,
     color: theme.colors.textMuted,
     fontWeight: '600',
-    marginBottom: 6,
   },
   tsadiHighlight: {
     color: theme.colors.text,
@@ -829,10 +878,12 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   tagText: {
-    backgroundColor: theme.colors.surfaceLight,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: theme.borderRadius.full,
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 9999,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
     fontSize: 11,
     color: theme.colors.textMuted,
     fontWeight: '700',
@@ -840,18 +891,21 @@ const styles = StyleSheet.create({
   },
   actionButtons: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
   },
   iconButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: theme.colors.surfaceLight,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   iconButtonDanger: {
     backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderColor: 'rgba(239, 68, 68, 0.2)',
   },
 
   fab: {
@@ -874,5 +928,27 @@ const styles = StyleSheet.create({
     fontSize: 32,
     color: 'white',
     lineHeight: 34,
-  }
+  },
+  bottomNav: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 12,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  navItem: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  navText: {
+    fontSize: 10,
+    color: theme.colors.textMuted,
+    fontWeight: '500',
+  },
 });
