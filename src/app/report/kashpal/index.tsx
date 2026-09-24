@@ -125,9 +125,9 @@ export default function KashpalReportScreen() {
           onPress: async () => {
             try {
               await endKashpalSession(selectedDohId, selectedPlatoon);
-              setActiveTab('view');
+              Alert.alert('כל הכבוד!', 'הדו"ח היומי הסתיים ונשלח לקשר"ג בהצלחה!');
             } catch {
-              Alert.alert('שגיאה', 'לא ניתן לסיים דו&quot;ח.');
+              Alert.alert('שגיאה', 'לא ניתן לסיים דו"ח.');
             }
           }
         }

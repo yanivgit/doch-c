@@ -177,8 +177,9 @@ export default function KashragReportScreen() {
     try {
       const allPlatoons = Object.keys(platoonStats.platoonTotals);
       await startGlobalSession(selectedDohId, allPlatoons);
+      Alert.alert('הצלחה', 'הדו"ח היומי הופעל בהצלחה לכל הפלוגות!');
     } catch {
-      Alert.alert('שגיאה', 'לא ניתן ליצור דו&quot;ח חדש');
+      Alert.alert('שגיאה', 'לא ניתן ליצור דו"ח חדש');
     }
   };
 
