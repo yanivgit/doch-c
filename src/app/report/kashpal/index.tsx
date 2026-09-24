@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, Platform } from 'react-native';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, Platform, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Snackbar from '../../../components/Snackbar';
 import * as Haptics from 'expo-haptics';
@@ -20,6 +20,7 @@ export default function KashpalReportScreen() {
   const [activeSession, setActiveSession] = useState<VerificationSession | null>(null);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [editingDevice, setEditingDevice] = useState<Device | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const fetchDevices = useCallback(async () => {
     if (!selectedPlatoon || !selectedDohId) return;
@@ -34,6 +35,25 @@ export default function KashpalReportScreen() {
       setLoading(false);
     }
   }, [selectedPlatoon, selectedDohId]);
+
+  const filteredAndSortedDevices = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    const filtered = devices.filter(d => {
+      if (!query) return true;
+      const tsadiMatch = d.tsadiNumber?.toLowerCase().includes(query);
+      const locMatch = d.location?.toLowerCase().includes(query);
+      return tsadiMatch || locMatch;
+    });
+
+    return filtered.sort((a, b) => {
+      const locA = a.location?.trim() || '';
+      const locB = b.location?.trim() || '';
+      if (!locA && !locB) return 0;
+      if (!locA) return 1;
+      if (!locB) return -1;
+      return locA.localeCompare(locB);
+    });
+  }, [devices, searchQuery]);
 
   useEffect(() => {
     fetchDevices();
@@ -175,7 +195,24 @@ export default function KashpalReportScreen() {
         <View style={{ flex: 1, paddingHorizontal: 16 }}>
           
           <View style={styles.infoBanner}>
-            <Text style={styles.infoText}>מציג ציוד עבור: {selectedPlatoon} ({devices.length} פריטים)</Text>
+            <Text style={styles.infoText}>מציג ציוד עבור: {selectedPlatoon} ({searchQuery.trim() ? `${filteredAndSortedDevices.length} מתוך ` : ''}{devices.length} פריטים)</Text>
+          </View>
+
+          <View style={styles.searchContainer}>
+            <Feather name="search" size={20} color={theme.colors.textMuted} style={styles.searchIcon} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="חיפוש לפי צ' או מיקום..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              textAlign="right"
+              placeholderTextColor={theme.colors.textMuted}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearSearchButton}>
+                <Feather name="x" size={16} color={theme.colors.textMuted} />
+              </TouchableOpacity>
+            )}
           </View>
 
           {loading ? (
@@ -226,9 +263,9 @@ export default function KashpalReportScreen() {
                       style={styles.listContainer}
                       contentContainerStyle={{ paddingBottom: 100 }}
                       keyboardShouldPersistTaps="handled"
-                      data={devices}
+                      data={filteredAndSortedDevices}
                       keyExtractor={(device) => device.id || Math.random().toString()}
-                      ListEmptyComponent={<Text style={styles.emptyText}>לא נמצא ציוד לפלוגה זו.</Text>}
+                      ListEmptyComponent={<Text style={styles.emptyText}>{searchQuery.trim() ? 'לא נמצאו תוצאות לחיפוש.' : 'לא נמצא ציוד לפלוגה זו.'}</Text>}
                       renderItem={({ item: device }) => {
                         const isVerified = device.id && activeSession?.verifiedDevices?.[device.id];
                         
@@ -422,12 +459,35 @@ const styles = StyleSheet.create({
   infoBanner: {
     paddingVertical: 8,
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 4,
   },
   infoText: {
     fontSize: 14,
     color: theme.colors.textMuted,
     fontWeight: '600',
+  },
+  searchContainer: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 9999,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    marginBottom: 16,
+  },
+  searchIcon: {
+    marginLeft: 8,
+  },
+  searchInput: {
+    flex: 1,
+    height: 48,
+    fontSize: 16,
+    color: theme.colors.text,
+    textAlign: 'right',
+  },
+  clearSearchButton: {
+    padding: 8,
   },
   listContainer: {
     flex: 1,
