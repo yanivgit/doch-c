@@ -75,13 +75,23 @@ export default function VerificationHistoryModal({ visible, onClose, dohId }: Pr
             <FlatList
               style={styles.list}
               data={logs}
-              keyExtractor={(log) => log.id || Math.random().toString()}
+              keyExtractor={(log) => log.id || log.date}
               renderItem={({ item: log }) => (
                 <View style={[styles.logCard, log.status === 'לא הושלם' && styles.logCardIncomplete]}>
                   <View style={styles.logHeader}>
-                    <View>
-                      <Text style={styles.logDate}>{log.date}</Text>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <View style={styles.dateRow}>
+                        <Text style={styles.logDate}>{log.date}</Text>
+                        {log.autoArchivedIncomplete && (
+                          <View style={styles.autoArchivedBadge}>
+                            <Text style={styles.autoArchivedBadgeText}>⚠️ לא הושלם (חצות)</Text>
+                          </View>
+                        )}
+                      </View>
                       <Text style={styles.logProgressText}>הושלם: {log.overallProgress}</Text>
+                      {log.completionNotes && (
+                        <Text style={styles.completionNotesText}>{log.completionNotes}</Text>
+                      )}
                     </View>
                     <View style={{flexDirection: 'row', alignItems: 'center', gap: 10}}>
                       <View style={[styles.statusBadge, log.status === 'בוצע' ? styles.statusSuccess : styles.statusDanger]}>
@@ -108,7 +118,7 @@ export default function VerificationHistoryModal({ visible, onClose, dohId }: Pr
                             <View key={platoon} style={styles.missingGroup}>
                               <Text style={styles.missingGroupTitle}>{platoon}</Text>
                               {devices.map(d => (
-                                <View key={d.id} style={styles.missingItemRow}>
+                                <View key={d.id || d.tsadiNumber} style={styles.missingItemRow}>
                                   <Text style={styles.missingItemType}>{d.type}</Text>
                                   <Text style={styles.missingItemTsadi}>צ&apos;: {d.tsadiNumber}</Text>
                                   {d.location ? <Text style={styles.missingItemLocation}>מיקום: {d.location}</Text> : null}
@@ -213,15 +223,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+    marginBottom: 2,
+  },
   logDate: {
     fontSize: 18,
     fontWeight: 'bold',
     color: theme.colors.text,
   },
+  autoArchivedBadge: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  autoArchivedBadgeText: {
+    color: '#B91C1C',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
   logProgressText: {
     fontSize: 14,
     color: theme.colors.textMuted,
     marginTop: 2,
+  },
+  completionNotesText: {
+    fontSize: 12,
+    color: '#B91C1C',
+    marginTop: 3,
+    fontWeight: '500',
+    textAlign: 'right',
   },
   statusBadge: {
     paddingHorizontal: 12,

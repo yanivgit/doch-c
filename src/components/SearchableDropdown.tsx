@@ -7,10 +7,10 @@ import {
   StyleSheet, 
   FlatList, 
   Modal,
-  SafeAreaView,
   KeyboardAvoidingView,
   Platform
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '../theme/theme';
 
 interface SearchableDropdownProps {
@@ -31,29 +31,29 @@ export default function SearchableDropdown({
   onDropdownToggle // kept for backwards compatibility but functionally obsolete
 }: SearchableDropdownProps) {
   const [modalVisible, setModalVisible] = useState(false);
-  const [query, setQuery] = useState(value);
-
-  useEffect(() => {
-    setQuery(value);
-  }, [value]);
+  const [query, setQuery] = useState('');
 
   const handleOpen = () => {
-    setQuery(value); // Reset query to current value when opening
+    setQuery(''); // Auto-clear search query on open so user doesn't have to delete pre-selected value
     setModalVisible(true);
     onDropdownToggle?.(true);
   };
 
   const handleClose = () => {
+    setQuery('');
     setModalVisible(false);
     onDropdownToggle?.(false);
   };
 
   const handleSelect = useCallback((item: string) => {
     onSelect(item);
+    setQuery('');
     handleClose();
   }, [onSelect]);
 
-  const filteredData = data.filter(item => item.includes(query));
+  const filteredData = data.filter(item => 
+    item.toLowerCase().includes(query.trim().toLowerCase())
+  );
 
   return (
     <>
@@ -102,8 +102,8 @@ export default function SearchableDropdown({
             </View>
 
             <FlatList
-              data={allowFreeText && query && !data.includes(query) ? [query, ...filteredData] : filteredData}
-              keyExtractor={(item, index) => `${item}-${index}`}
+              data={allowFreeText && query.trim() && !data.includes(query.trim()) ? [query.trim(), ...filteredData] : filteredData}
+              keyExtractor={(item) => item}
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={styles.listContent}
               renderItem={({ item, index }) => (
@@ -113,9 +113,9 @@ export default function SearchableDropdown({
                 >
                   <Text style={[
                     styles.dropdownText, 
-                    allowFreeText && index === 0 && query && !data.includes(query) && styles.freeTextLabel
+                    allowFreeText && index === 0 && query.trim() && !data.includes(query.trim()) && styles.freeTextLabel
                   ]}>
-                    {allowFreeText && index === 0 && query && !data.includes(query) ? `הוסף כטקסט חופשי: "${item}"` : item}
+                    {allowFreeText && index === 0 && query.trim() && !data.includes(query.trim()) ? `הוסף כטקסט חופשי: "${item}"` : item}
                   </Text>
                 </TouchableOpacity>
               )}

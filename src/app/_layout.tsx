@@ -1,4 +1,3 @@
-import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { I18nManager, View, ActivityIndicator } from 'react-native';
 import { useEffect } from 'react';
@@ -7,6 +6,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppProvider, useApp } from '../context/AppContext';
 import { theme } from '../theme/theme';
+import { Feather, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 import '../global.css';
 
@@ -21,8 +21,6 @@ function InitialLayout() {
 
   useEffect(() => {
     if (isLoading) return;
-
-
     
     // For now we assume root '/' is role selection and '/cycle-selection' is cycle selection.
     // The main report view will be under '/report'
@@ -59,21 +57,6 @@ function InitialLayout() {
   return <Stack screenOptions={{ headerShown: false }} />;
 }
 
-const VibrantLightTheme = {
-  ...DefaultTheme,
-  colors: {
-    ...DefaultTheme.colors,
-    primary: theme.colors.primary,
-    background: theme.colors.background,
-    card: theme.colors.surface,
-    text: theme.colors.text,
-    border: theme.colors.border,
-    notification: theme.colors.danger,
-  },
-};
-
-import { Feather } from '@expo/vector-icons';
-
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
     Heebo_400Regular,
@@ -81,6 +64,8 @@ export default function RootLayout() {
     Heebo_700Bold,
     Heebo_800ExtraBold,
     ...Feather.font,
+    ...MaterialIcons.font,
+    ...MaterialCommunityIcons.font,
   });
 
   if (!fontsLoaded) {
@@ -94,11 +79,9 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <ThemeProvider value={VibrantLightTheme}>
-          <AppProvider>
-            <InitialLayout />
-          </AppProvider>
-        </ThemeProvider>
+        <AppProvider>
+          <InitialLayout />
+        </AppProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

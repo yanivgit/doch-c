@@ -1,16 +1,53 @@
-import { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, TextInput, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  View, 
+  Text, 
+  TouchableOpacity, 
+  StyleSheet, 
+  Modal, 
+  TextInput, 
+  Alert, 
+  KeyboardAvoidingView, 
+  Platform, 
+  ScrollView, 
+  Animated 
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApp, UserRole } from '../context/AppContext';
-import { theme } from '../theme/theme';
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
+import ReportFaultModal from '../components/ReportFaultModal';
 
 export default function RoleSelectionScreen() {
   const router = useRouter();
   const { login } = useApp();
   const [showPinModal, setShowPinModal] = useState(false);
+  const [showReportFaultModal, setShowReportFaultModal] = useState(false);
   const [pin, setPin] = useState('');
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 0.3,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    animation.start();
+
+    return () => {
+      animation.stop();
+    };
+  }, [pulseAnim]);
 
   const handleRoleSelect = (role: UserRole) => {
     if (role === 'Kashrag') {
@@ -32,117 +69,169 @@ export default function RoleSelectionScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent} bounces={false}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent} 
+        bounces={false}
+        showsVerticalScrollIndicator={false}
+      >
         
-        {/* Top Header */}
-        <View style={styles.topHeader}>
-          <TouchableOpacity style={styles.topHeaderIcon}>
-            <Feather name="log-out" size={20} color={theme.colors.danger} />
-          </TouchableOpacity>
-          <Text style={styles.topHeaderText}>דו&quot;ח ציוד טקטי • מחזור א׳</Text>
-          <TouchableOpacity style={styles.topHeaderIcon}>
-            <Feather name="user" size={20} color="#fff" />
+        {/* Top Header Row: In RTL (flex-direction: row), Child 1 is on the RIGHT, Child 2 is on the LEFT */}
+        <View style={styles.headerTop}>
+          {/* Child 1 (RIGHT): Green verified badge on far right, then Titles column */}
+          <View style={styles.headerTopRight}>
+            <View style={styles.checkBadgeBox}>
+              <MaterialCommunityIcons name="check-decagram" size={24} color="#FFFFFF" />
+            </View>
+            <View style={styles.headerTitleColumn}>
+              <Text style={styles.headerTopSubtitle}>דו"ח ציוד טקטי • מחזור א'</Text>
+              <Text style={styles.headerTopTitle}>Login Roles</Text>
+            </View>
+          </View>
+
+          {/* Child 2 (LEFT): Red logout toward inside, Green user circle at the far left edge */}
+          <View style={styles.headerTopLeft}>
+            <TouchableOpacity style={styles.iconBtnLogout} onPress={() => Alert.alert('התנתקות', 'האם אתה בטוח שברצונך להתנתק?', [{ text: 'ביטול', style: 'cancel' }, { text: 'התנתק', style: 'destructive' }])}>
+              <Feather name="log-out" size={20} color="#DC2626" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.userCircleBtn}>
+              <Feather name="user" size={18} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Floating Settings Gear Icon on the top left */}
+        <View style={styles.settingsRow}>
+          <TouchableOpacity style={styles.settingsBtn} onPress={() => Alert.alert('הגדרות', 'מערכת ניהול דוח צ v2.4')}>
+            <Feather name="settings" size={18} color="#64748B" />
           </TouchableOpacity>
         </View>
 
-        {/* Shield Banner */}
-        <View style={styles.shieldContainer}>
-          <View style={styles.shieldIconWrapper}>
-            <Feather name="shield" size={32} color={theme.colors.success} />
+        {/* Shield Banner (Lavender / Light Indigo Card) */}
+        <View style={styles.bannerContainer}>
+          <Text style={styles.bannerSmallText}>דו'ח צ</Text>
+          <View style={styles.shieldWhiteCard}>
+            <MaterialCommunityIcons name="shield-check" size={34} color="#15803D" />
           </View>
-          <View style={styles.statusBadge}>
-            <View style={styles.statusDot} />
+          <View style={styles.statusPill}>
+            <Animated.View style={[styles.statusDot, { opacity: pulseAnim }]} />
             <Text style={styles.statusText}>רשת מבצעית פעילה</Text>
           </View>
         </View>
-        
+
         {/* Main Titles */}
-        <View style={styles.header}>
-          <Text style={styles.title}>דו&quot;ח צ&apos;</Text>
-          <Text style={styles.subtitle}>מערכת ניהול ציוד קשר ודיווח מבצעי</Text>
-          <View style={styles.authNoteContainer}>
-            <Feather name="check-circle" size={14} color={theme.colors.success} />
-            <Text style={styles.authNoteText}>הזדהות לפי הרשאת תפקיד גזרתית</Text>
+        <View style={styles.titlesSection}>
+          <Text style={styles.mainTitle}>דו"ח צ'</Text>
+          <Text style={styles.mainSubtitle}>מערכת ניהול ציוד קשר ודיווח מבצעי</Text>
+          <View style={styles.authBadgePill}>
+            <MaterialCommunityIcons name="shield-check-outline" size={15} color="#15803D" />
+            <Text style={styles.authBadgeText}>הזדהות לפי הרשאת תפקיד גזרתית</Text>
           </View>
         </View>
 
-        <View style={styles.roleSelection}>
-          <Text style={styles.instruction}>בחר תפקיד להתחברות:</Text>
-          
-          {/* Kashpal Card */}
-          <TouchableOpacity style={styles.roleCardLight} onPress={() => handleRoleSelect('Kashpal')}>
-            <View style={styles.roleCardLeft}>
-              <Feather name="arrow-left" size={20} color={theme.colors.textMuted} />
+        {/* Roles Section */}
+        <View style={styles.rolesSection}>
+          <View style={styles.instructionRow}>
+            {/* Child 1 in RTL: On the RIGHT */}
+            <Text style={styles.instructionText}>בחר תפקיד להתחברות:</Text>
+            {/* Child 2 in RTL: On the LEFT */}
+            <View style={styles.idfBadge}>
+              <Text style={styles.idfBadgeText}>מאובטח צה"ל</Text>
+            </View>
+          </View>
+
+          {/* Kashpal Button: Light Card (Child 1: Mint Icon Box, Child 2: Text Column, Child 3: Arrow Circle) */}
+          <TouchableOpacity 
+            style={styles.roleCardLight} 
+            activeOpacity={0.85} 
+            onPress={() => handleRoleSelect('Kashpal')}
+          >
+            <View style={styles.kashpalIconBox}>
+              <MaterialIcons name="radio" size={26} color="#15803D" />
             </View>
             <View style={styles.roleCardContent}>
-              <Text style={styles.roleCardTitleLight}>קשפ&quot;ל</Text>
-              <Text style={styles.roleCardDescLight}>תצוגת פלוגה | ניהול צק&quot;ח ומצאי שטח</Text>
+              <Text style={styles.roleTitleLight}>קשפ"ל</Text>
+              <Text style={styles.roleSubLight}>תצוגת פלוגה • ניהול צק"ח ומצאי שטח</Text>
             </View>
-            <View style={[styles.roleCardIconWrapper, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
-              <Feather name="briefcase" size={24} color={theme.colors.success} />
+            <View style={styles.roleCardLeftArrowLight}>
+              <Feather name="arrow-left" size={18} color="#475569" />
             </View>
           </TouchableOpacity>
 
-          {/* Kashrag Card */}
-          <TouchableOpacity style={styles.roleCardDark} onPress={() => handleRoleSelect('Kashrag')}>
-            <View style={styles.roleCardLeft}>
-              <Feather name="arrow-left" size={20} color="rgba(255,255,255,0.5)" />
+          {/* Kashrag Button: Dark Navy Card (Child 1: Dark Slate Icon Box, Child 2: Text Column, Child 3: Arrow Circle) */}
+          <TouchableOpacity 
+            style={styles.roleCardDark} 
+            activeOpacity={0.85} 
+            onPress={() => handleRoleSelect('Kashrag')}
+          >
+            <View style={styles.kashragIconBox}>
+              <MaterialIcons name="hub" size={26} color="#86EFAC" />
             </View>
             <View style={styles.roleCardContent}>
-              <Text style={styles.roleCardTitleDark}>קשר&quot;ג</Text>
-              <Text style={styles.roleCardDescDark}>תצוגת גדוד | סנכרון תמונת מצב גדודית</Text>
+              <Text style={styles.roleTitleDark}>קשר"ג</Text>
+              <Text style={styles.roleSubDark}>תצוגת גדוד • סנכרון תמונת מצב גדודית</Text>
             </View>
-            <View style={[styles.roleCardIconWrapper, { backgroundColor: 'rgba(255, 255, 255, 0.15)' }]}>
-              <Feather name="command" size={24} color="#A7F3D0" />
+            <View style={styles.roleCardLeftArrowDark}>
+              <Feather name="arrow-left" size={18} color="#E2E8F0" />
             </View>
           </TouchableOpacity>
-          
-          {/* General Report Button */}
-          <TouchableOpacity style={styles.generalReportButton} onPress={() => router.push('/report/submit')}>
-            <Feather name="alert-triangle" size={18} color={theme.colors.warning} />
-            <Text style={styles.generalReportText}>הגש דיווח כללי / תקלה</Text>
+
+          {/* General Report Button (Lavender / Indigo tint) */}
+          <TouchableOpacity 
+            style={styles.generalReportBtn} 
+            activeOpacity={0.85} 
+            onPress={() => setShowReportFaultModal(true)}
+          >
+            <View style={styles.generalReportInner}>
+              <Feather name="alert-triangle" size={18} color="#B45309" style={{ marginLeft: 8 }} />
+              <Text style={styles.generalReportText}>הגש דיווח כללי / תקלה</Text>
+            </View>
           </TouchableOpacity>
         </View>
 
         {/* Footer */}
         <View style={styles.footer}>
-          <View style={styles.footerRow}>
+          <View style={styles.footerTopRow}>
             <View style={styles.footerDot} />
-            <Text style={styles.footerText}>גרסת מערכת מבצעית v2.4 — אגף קשר ואלקטרוניקה</Text>
+            <Text style={styles.footerText}>גרסת מערכת מבצעית v2.4 • ענף קשר ואלקטרוניקה</Text>
           </View>
-          <Text style={styles.footerSubtext}>סיווג: מוגבל | מיועד לשימוש מורשה בלבד</Text>
-        </View>
-
-        {/* Bottom Navigation Mock */}
-        <View style={styles.bottomNav}>
-          <View style={styles.navItem}>
-            <Feather name="briefcase" size={20} color={theme.colors.textMuted} />
-            <Text style={styles.navText}>קשפ"ל</Text>
-          </View>
-          <View style={styles.navItem}>
-            <Feather name="plus-circle" size={20} color={theme.colors.textMuted} />
-            <Text style={styles.navText}>הוספת ציוד</Text>
-          </View>
-          <View style={styles.navItem}>
-            <Feather name="clock" size={20} color={theme.colors.textMuted} />
-            <Text style={styles.navText}>ציר זמן</Text>
-          </View>
-          <View style={styles.navItem}>
-            <Feather name="shield" size={20} color={theme.colors.primary} />
-            <Text style={[styles.navText, {color: theme.colors.primary, fontWeight: '700'}]}>כניסה</Text>
-          </View>
+          <Text style={styles.footerSubText}>סיווג: מוגבל | מיועד לשימוש מורשה בלבד</Text>
         </View>
 
       </ScrollView>
 
+      {/* Bottom Navigation Bar */}
+      <View style={styles.bottomNav}>
+        {/* In RTL: Child 1 is far right, Child 4 is far left */}
+        <TouchableOpacity style={styles.navItem} onPress={() => handleRoleSelect('Kashpal')}>
+          <MaterialCommunityIcons name="archive-outline" size={22} color="#64748B" />
+          <Text style={styles.navText}>קשפ"ל</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.navItem} onPress={() => handleRoleSelect('Kashrag')}>
+          <Feather name="plus-circle" size={20} color="#64748B" />
+          <Text style={styles.navText}>הוספת ציוד</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.navItem} onPress={() => Alert.alert('ציר זמן', 'התחבר תחילה כדי לצפות בציר הזמן')}>
+          <Feather name="clock" size={20} color="#64748B" />
+          <Text style={styles.navText}>ציר זמן</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.navItem} activeOpacity={1}>
+          <MaterialIcons name="badge" size={22} color="#15803D" />
+          <Text style={[styles.navText, styles.navTextActive]}>כניסה</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* PIN Modal for Kashrag */}
       <Modal visible={showPinModal} animationType="fade" transparent>
         <KeyboardAvoidingView 
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalOverlay}
         >
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>הכנס קוד קשר&quot;ג</Text>
+            <Text style={styles.modalTitle}>הכנס קוד קשר"ג</Text>
             <TextInput
               style={styles.pinInput}
               keyboardType="numeric"
@@ -150,19 +239,33 @@ export default function RoleSelectionScreen() {
               value={pin}
               onChangeText={setPin}
               placeholder="****"
+              placeholderTextColor="#94A3B8"
               autoFocus
+              maxLength={6}
             />
             <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.modalButtonCancel} onPress={() => { setShowPinModal(false); setPin(''); }}>
+              <TouchableOpacity 
+                style={styles.modalButtonCancel} 
+                onPress={() => { setShowPinModal(false); setPin(''); }}
+              >
                 <Text style={styles.modalButtonTextCancel}>ביטול</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalButtonSubmit} onPress={handlePinSubmit}>
+              <TouchableOpacity 
+                style={styles.modalButtonSubmit} 
+                onPress={handlePinSubmit}
+              >
                 <Text style={styles.modalButtonTextSubmit}>היכנס</Text>
               </TouchableOpacity>
             </View>
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Report Fault Modal */}
+      <ReportFaultModal
+        visible={showReportFaultModal}
+        onClose={() => setShowReportFaultModal(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -170,184 +273,317 @@ export default function RoleSelectionScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF', // Clean white background like the design
+    backgroundColor: '#FFFFFF',
   },
   scrollContent: {
     flexGrow: 1,
-    alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: Platform.OS === 'ios' ? 100 : 80,
-  },
-  topHeader: {
-    flexDirection: 'row',
+    paddingTop: 8,
+    paddingBottom: 24,
+    maxWidth: 480,
+    alignSelf: 'center',
     width: '100%',
+  },
+
+  /* Header */
+  headerTop: {
+    flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 4,
   },
-  topHeaderIcon: {
-    width: 32,
-    height: 32,
+  headerTopRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  checkBadgeBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: '#1E6B3A', // Solid tactical green with rounded corners
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitleColumn: {
+    alignItems: 'flex-start', // in RTL, flex-start is the RIGHT edge!
+  },
+  headerTopSubtitle: {
+    fontSize: 10,
+    color: '#64748B',
+    textAlign: 'right',
+    fontWeight: '500',
+  },
+  headerTopTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'right',
+  },
+  headerTopLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  iconBtnLogout: {
+    padding: 6,
+  },
+  userCircleBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#1E6B3A', // Dark green avatar
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  /* Floating Settings gear icon on the top left */
+  settingsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end', // in RTL, flex-end places it on the LEFT edge!
+    marginTop: -2,
+    marginBottom: 8,
+  },
+  settingsBtn: {
+    padding: 6,
+    backgroundColor: '#F8FAFC',
     borderRadius: 8,
-    backgroundColor: theme.colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  topHeaderText: {
-    fontSize: 12,
-    color: theme.colors.textMuted,
-    fontWeight: '600',
-  },
-  shieldContainer: {
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  shieldIconWrapper: {
-    width: 80,
-    height: 80,
+
+  /* Shield Banner (Lavender / Indigo Card) */
+  bannerContainer: {
+    backgroundColor: '#EEF2FF', // Soft lavender / indigo card
     borderRadius: 24,
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    paddingTop: 14,
+    paddingBottom: 18,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  bannerSmallText: {
+    fontSize: 12,
+    color: '#818CF8', // Light indigo / purple text
+    fontWeight: '700',
+    marginBottom: 10,
+  },
+  shieldWhiteCard: {
+    width: 60,
+    height: 60,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
+    marginBottom: 12,
   },
-  statusBadge: {
-    flexDirection: 'row-reverse',
+  statusPill: {
+    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    paddingHorizontal: 16,
+    backgroundColor: '#DCFCE7', // Mint green pill
+    paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: 9999,
   },
   statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: theme.colors.success,
-    marginLeft: 8,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#15803D',
+    marginLeft: 6,
   },
   statusText: {
-    color: theme.colors.success,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
+    color: '#15803D',
   },
-  header: {
+
+  /* Main Titles */
+  titlesSection: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 24,
   },
-  title: {
-    fontSize: 48,
+  mainTitle: {
+    fontSize: 36,
     fontWeight: '900',
-    color: theme.colors.primary,
-    marginBottom: 8,
-    letterSpacing: -1,
+    color: '#0F172A',
+    marginBottom: 4,
+    letterSpacing: -0.5,
   },
-  subtitle: {
-    fontSize: 16,
-    color: theme.colors.text,
-    fontWeight: '600',
-    marginBottom: 16,
+  mainSubtitle: {
+    fontSize: 14,
+    color: '#64748B',
+    marginBottom: 12,
   },
-  authNoteContainer: {
-    flexDirection: 'row-reverse',
+  authBadgePill: {
+    flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#EEF2FF', // Soft indigo background
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 9999,
     gap: 6,
   },
-  authNoteText: {
-    fontSize: 13,
-    color: theme.colors.textMuted,
+  authBadgeText: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '600',
   },
-  roleSelection: {
-    width: '100%',
-    marginBottom: 40,
+
+  /* Roles Section */
+  rolesSection: {
+    marginBottom: 24,
   },
-  instruction: {
+  instructionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  instructionText: {
     fontSize: 16,
-    marginBottom: 16,
-    textAlign: 'right',
-    color: theme.colors.text,
     fontWeight: '800',
+    color: '#0F172A',
   },
+  idfBadge: {
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  idfBadgeText: {
+    fontSize: 11,
+    color: '#0369A1',
+    fontWeight: '700',
+  },
+
+  /* Role Card 1: Kashpal (Light) */
   roleCardLight: {
     flexDirection: 'row',
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    padding: 16,
-    borderRadius: 16,
     alignItems: 'center',
-    marginBottom: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 2,
   },
-  roleCardDark: {
-    flexDirection: 'row',
-    backgroundColor: theme.colors.primary,
-    padding: 16,
-    borderRadius: 16,
+  kashpalIconBox: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: '#BBF7D0', // Mint green background
     alignItems: 'center',
-    marginBottom: 20,
-    elevation: 4,
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
-  roleCardLeft: {
-    width: 40,
-    alignItems: 'center',
+    justifyContent: 'center',
   },
   roleCardContent: {
     flex: 1,
-    alignItems: 'flex-end',
-    paddingRight: 16,
+    paddingHorizontal: 14,
+    alignItems: 'flex-start', // in RTL, flex-start is the RIGHT edge!
   },
-  roleCardIconWrapper: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+  roleTitleLight: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'right',
+  },
+  roleSubLight: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'right',
+    marginTop: 2,
+  },
+  roleCardLeftArrowLight: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  roleCardTitleLight: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: theme.colors.text,
-    marginBottom: 2,
+
+  /* Role Card 2: Kashrag (Dark) */
+  roleCardDark: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1E2538', // Dark technical navy slate
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  roleCardDescLight: {
-    fontSize: 12,
-    color: theme.colors.textMuted,
+  kashragIconBox: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: '#334155',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  roleCardTitleDark: {
-    fontSize: 22,
-    fontWeight: '900',
+  roleTitleDark: {
+    fontSize: 18,
+    fontWeight: '800',
     color: '#FFFFFF',
-    marginBottom: 2,
+    textAlign: 'right',
   },
-  roleCardDescDark: {
+  roleSubDark: {
     fontSize: 12,
-    color: 'rgba(255,255,255,0.7)',
+    color: '#94A3B8',
+    textAlign: 'right',
+    marginTop: 2,
   },
-  generalReportButton: {
-    flexDirection: 'row-reverse',
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-    padding: 16,
-    borderRadius: 12,
+  roleCardLeftArrowDark: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#334155',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+  },
+
+  /* General Report Button (Lavender / Indigo tint) */
+  generalReportBtn: {
+    backgroundColor: '#EEF2FF',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  generalReportInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   generalReportText: {
-    color: theme.colors.warning,
     fontSize: 14,
+    color: '#334155',
     fontWeight: '700',
   },
+
+  /* Footer */
   footer: {
     alignItems: 'center',
-    marginTop: 'auto',
+    marginTop: 10,
+    marginBottom: 8,
   },
-  footerRow: {
-    flexDirection: 'row-reverse',
+  footerTopRow: {
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     marginBottom: 4,
@@ -356,97 +592,103 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: theme.colors.success,
+    backgroundColor: '#15803D',
   },
   footerText: {
-    fontSize: 12,
-    color: theme.colors.text,
-    fontWeight: '600',
-  },
-  footerSubtext: {
     fontSize: 11,
-    color: theme.colors.textMuted,
+    color: '#64748B',
   },
+  footerSubText: {
+    fontSize: 10,
+    color: '#94A3B8',
+  },
+
+  /* Bottom Navigation Bar */
   bottomNav: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
     flexDirection: 'row',
     justifyContent: 'space-around',
+    alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    paddingVertical: 12,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
+    paddingVertical: 10,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 10,
     borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
+    borderTopColor: '#F1F5F9',
   },
   navItem: {
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 4,
+    minWidth: 64,
   },
   navText: {
-    fontSize: 10,
-    color: theme.colors.textMuted,
+    fontSize: 11,
+    color: '#64748B',
     fontWeight: '500',
   },
+  navTextActive: {
+    color: '#15803D',
+    fontWeight: '800',
+  },
+
+  /* PIN Modal */
   modalOverlay: {
     flex: 1,
-    backgroundColor: theme.colors.overlay,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
   modalContent: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.lg,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
     padding: 24,
     width: '100%',
-    maxWidth: 400,
+    maxWidth: 380,
     alignItems: 'center',
-    ...theme.elevation.lg,
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: theme.colors.text,
+    color: '#0F172A',
     marginBottom: 20,
   },
   pinInput: {
-    backgroundColor: theme.colors.background,
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: theme.borderRadius.full,
+    borderColor: '#E2E8F0',
+    borderRadius: 9999,
     width: '100%',
     padding: 16,
     fontSize: 24,
     textAlign: 'center',
     marginBottom: 24,
     letterSpacing: 10,
+    color: '#0F172A',
   },
   modalButtons: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     width: '100%',
     justifyContent: 'space-between',
+    gap: 12,
   },
   modalButtonCancel: {
     flex: 1,
     padding: 12,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: theme.borderRadius.full,
-    marginLeft: 10,
+    borderColor: '#E2E8F0',
+    borderRadius: 9999,
   },
   modalButtonSubmit: {
     flex: 1,
     padding: 12,
     alignItems: 'center',
-    backgroundColor: theme.colors.primary,
-    borderRadius: theme.borderRadius.full,
+    backgroundColor: '#15803D',
+    borderRadius: 9999,
   },
   modalButtonTextCancel: {
     fontSize: 16,
-    color: theme.colors.text,
+    color: '#0F172A',
     fontWeight: 'bold',
   },
   modalButtonTextSubmit: {

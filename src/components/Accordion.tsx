@@ -1,13 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, LayoutAnimation, Platform, UIManager } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, LayoutAnimation } from 'react-native';
 import { theme } from '../theme/theme';
-
-// Enable LayoutAnimation for Android
-if (Platform.OS === 'android') {
-  if (UIManager.setLayoutAnimationEnabledExperimental) {
-    UIManager.setLayoutAnimationEnabledExperimental(true);
-  }
-}
 
 interface AccordionProps {
   title: string;

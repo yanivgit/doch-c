@@ -13,7 +13,7 @@ interface TransferDeviceModalProps {
 }
 
 export default function TransferDeviceModal({ device, visible, onClose, onTransfer }: TransferDeviceModalProps) {
-  const { getAllPlatoons, getLocationsForPlatoon, learnNewOption } = useApp();
+  const { userRole, selectedPlatoon, getAllPlatoons, getLocationsForPlatoon, learnNewOption } = useApp();
   const [pluga, setPluga] = useState('');
   const [location, setLocation] = useState('');
   const [loading, setLoading] = useState(false);
@@ -35,7 +35,11 @@ export default function TransferDeviceModal({ device, visible, onClose, onTransf
 
     setLoading(true);
     try {
-      await updateDeviceAssignmentAndLocation(device.id, pluga, location.trim());
+      const currentUser = userRole === 'Kashpal' 
+        ? (selectedPlatoon ? `קשפ"ל_${selectedPlatoon}` : 'קשפ"ל')
+        : 'קשר"ג';
+
+      await updateDeviceAssignmentAndLocation(device.id, pluga, location.trim(), currentUser);
       
       // Learn new options
       learnNewOption('platoon', pluga.trim());
@@ -82,7 +86,10 @@ export default function TransferDeviceModal({ device, visible, onClose, onTransf
             <SearchableDropdown
               data={getAllPlatoons()}
               value={pluga}
-              onSelect={setPluga}
+              onSelect={(newPlatoon) => {
+                setPluga(newPlatoon);
+                setLocation(''); // Immediately clear location state when destination platoon changes
+              }}
               placeholder="חפש ובחר פלוגה..."
             />
 

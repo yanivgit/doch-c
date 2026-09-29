@@ -62,8 +62,9 @@ export default function RapidSetupScreen() {
 
     } catch (error: any) {
       console.error(error);
-      if (error.message === 'DUPLICATE_TSADI') {
-        alert('מספר צ\' זה כבר קיים בפלוגה זו.');
+      const errorMessage = error?.message || '';
+      if (errorMessage.includes('קיים') || errorMessage === 'DUPLICATE_TSADI') {
+        alert(errorMessage.includes('קיים') ? errorMessage : "מכשיר עם צ' זה כבר קיים במצבת הגדוד.");
       } else {
         alert('שגיאה בהוספת הציוד. נסה שוב.');
       }
@@ -151,8 +152,8 @@ export default function RapidSetupScreen() {
             {recentDevices.length === 0 ? (
               <Text style={styles.emptyRecent}>טרם נוספו מכשירים בסשן זה</Text>
             ) : (
-              recentDevices.slice(0, 10).map((device, index) => (
-                <View key={device.id || index} style={styles.recentItem}>
+              recentDevices.slice(0, 10).map((device) => (
+                <View key={device.id || device.tsadiNumber} style={styles.recentItem}>
                   <Text style={styles.recentIcon}>✅</Text>
                   <View style={styles.recentInfo}>
                     <Text style={styles.recentType}>{device.type} - צ&apos;: {device.tsadiNumber}</Text>

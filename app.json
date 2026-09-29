@@ -3,7 +3,7 @@
     "name": "report C",
     "slug": "report-c",
     "version": "1.0.0",
-    "sdkVersion": "54.0.0",
+    "sdkVersion": "57.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "simplephoneapp",
@@ -36,7 +36,11 @@
             "imageWidth": 76
           }
         }
-      ]
+      ],
+      "expo-font",
+      "expo-image",
+      "expo-status-bar",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,

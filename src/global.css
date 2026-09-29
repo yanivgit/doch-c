@@ -8,7 +8,7 @@
   --font-serif: Georgia, 'Times New Roman', serif;
 }
 
-body, * {
-  font-family: 'Heebo_400Regular', 'Heebo', sans-serif !important;
+body {
+  font-family: 'Heebo_400Regular', 'Heebo', sans-serif;
   direction: rtl;
 }

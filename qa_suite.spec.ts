@@ -14,14 +14,16 @@ test.describe('Continuous QA Suite: Doh Ts App', () => {
     // Context A: Kashrag (Admin)
     const contextA = await browser.newContext();
     const pageA = await contextA.newPage();
+    pageA.on('dialog', dialog => dialog.accept());
     
     // Context B: Kashpal (Field)
     const contextB = await browser.newContext();
     const pageB = await contextB.newPage();
+    pageB.on('dialog', dialog => dialog.accept());
 
     console.log('Logging in Kashrag (Context A)...');
     await pageA.goto(URL);
-    await pageA.click('text=קשר"ג (תצוגת גדוד)');
+    await pageA.locator('text=קשר"ג').first().click();
     
     // Passcode modal
     const passcodeA = pageA.locator('input[placeholder="****"]');
@@ -35,56 +37,54 @@ test.describe('Continuous QA Suite: Doh Ts App', () => {
     
     // Check if we need to create a cycle or can select one
     const createBtn = pageA.locator('text=+ יצירת דו"ח צ חדש');
-    if (await createBtn.isVisible()) {
-      await createBtn.click();
-      await pageA.locator('input[placeholder=\'הזן שם למחזור / דו"ח...\']').fill(cycleName);
-      await pageA.click('text=שמור והיכנס');
-      await pageA.waitForURL('**/report/kashrag/setup');
-      // Just jump to main report
-      await pageA.goto(`${URL}/report/kashrag`);
-    } else {
-      // If we didn't create, we can't easily know the name, but we can just click the first available text that looks like a cycle.
-      // But since we are testing in a clean environment, we will always create one.
-      // If not, we'll just try to click the Test_Cycle text if it exists.
-      cycleName = ''; 
-    }
+    await createBtn.waitFor({ state: 'visible', timeout: 10000 });
+    await createBtn.click();
+    await pageA.locator('input[placeholder=\'הזן שם למחזור / דו"ח...\']').fill(cycleName);
+    await pageA.click('text=שמור והיכנס');
+    await pageA.waitForURL('**/report/kashrag/setup');
+    // Just jump to main report
+    await pageA.goto(`${URL}/report/kashrag`);
     
     await pageA.waitForURL('**/report/kashrag');
     
     // Start global session first so Kashpal doesn't get confused
     console.log('Kashrag starting global session...');
-    // Wait for the UI to settle
-    await pageA.waitForTimeout(1000);
     const startBtn1 = pageA.locator('text=פתח דו"ח יומי');
     const startBtn2 = pageA.locator('text=הפעל דו"ח לכל הפלוגות');
+    const resetBtn = pageA.locator('text=איפוס');
+    
+    // Wait for the board to finish loading
+    await Promise.race([
+      startBtn1.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {}),
+      startBtn2.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {}),
+      resetBtn.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {})
+    ]);
+
     if (await startBtn1.isVisible()) {
       await startBtn1.click();
     } else if (await startBtn2.isVisible()) {
       await startBtn2.click();
-    } else {
-      const resetBtn = pageA.locator('text=איפוס');
-      if (await resetBtn.isVisible()) await resetBtn.click();
+    } else if (await resetBtn.isVisible()) {
+      await resetBtn.click();
+      await pageA.waitForTimeout(500);
+      if (await startBtn1.isVisible()) await startBtn1.click();
     }
 
     console.log('Logging in Kashpal (Context B)...');
     await pageB.goto(URL);
-    await pageB.click('text=קשפ"ל (תצוגת פלוגה)');
+    await pageB.locator('text=קשפ"ל').first().click();
     
     await pageB.waitForURL('**/cycle-selection');
     
-    if (cycleName) {
-      await pageB.click(`text=${cycleName}`);
-    } else {
-      // Fallback if needed, click the first Text node inside the cycle list
-      // In RN Web, Text components render as div with dir="auto"
-      await pageB.locator('div[dir="auto"]').filter({ hasText: /Test_Cycle/ }).first().click();
-    }
+    const cycleItem = pageB.locator(`text=${cycleName}`);
+    await cycleItem.waitFor({ state: 'visible', timeout: 10000 });
+    await cycleItem.click();
     
     await pageB.waitForURL('**/report/kashpal');
 
     // Kashpal select platoon
     console.log('Kashpal selecting platoon...');
-    await pageB.click('text=חפש פלוגה...');
+    await pageB.click('text=חפש ובחר פלוגה...');
     const searchInput = pageB.locator('input[placeholder="הקלד לחיפוש..."]');
     await expect(searchInput).toBeVisible({ timeout: 5000 });
     await searchInput.fill("פלוגה א׳");

@@ -1,13 +1,12 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, TextInput, Platform } from 'react-native';
+import { View, Text, StyleSheet, SectionList, TouchableOpacity, ActivityIndicator, Alert, TextInput, Platform, LayoutAnimation } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useApp } from '../../../context/AppContext';
-import { getAllDevices, Device, deleteDevice, VerificationSession, archiveSession, resetSession, getDailyDocId, startGlobalSession } from '../../../firebase/api';
+import { getAllDevices, subscribeToAllDevices, Device, deleteDevice, VerificationSession, archiveSession, archiveExpiredSessions, resetSession, getDailyDocId, startGlobalSession, subscribeToVerifiedDevices, reopenKashpalSession, resetPlatoonSession } from '../../../firebase/api';
 import { db } from '../../../firebase/config';
 import { onSnapshot, doc } from 'firebase/firestore';
 import * as Clipboard from 'expo-clipboard';
-import Accordion from '../../../components/Accordion';
 import AddDeviceModal from '../../../components/AddDeviceModal';
 import TransferDeviceModal from '../../../components/TransferDeviceModal';
 import DeviceHistoryModal from '../../../components/DeviceHistoryModal';
@@ -16,6 +15,9 @@ import { theme } from '../../../theme/theme';
 import VerificationHistoryModal from '../../../components/VerificationHistoryModal';
 import { Feather } from '@expo/vector-icons';
 import DailySummaryModal from '../../../components/DailySummaryModal';
+import ReportFaultModal from '../../../components/ReportFaultModal';
+import ReplaceDeviceModal from '../../../components/ReplaceDeviceModal';
+import OfflineBanner from '../../../components/OfflineBanner';
 
 export default function KashragReportScreen() {
   const { selectedDohId, selectedDohName, logout } = useApp();
@@ -24,6 +26,9 @@ export default function KashragReportScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [transferDevice, setTransferDevice] = useState<Device | null>(null);
   const [historyDevice, setHistoryDevice] = useState<Device | null>(null);
+  const [faultModalDevice, setFaultModalDevice] = useState<Device | null>(null);
+  const [isFaultModalVisible, setIsFaultModalVisible] = useState(false);
+  const [replacingDevice, setReplacingDevice] = useState<Device | null>(null);
   
   // New features state
   const [searchQuery, setSearchQuery] = useState('');
@@ -31,6 +36,7 @@ export default function KashragReportScreen() {
   
   // Verification Session State
   const [activeSession, setActiveSession] = useState<VerificationSession | null>(null);
+  const [verifiedDevicesMap, setVerifiedDevicesMap] = useState<Record<string, { verifiedAt: any; verifiedBy: string }>>({});
   const [historyModalVisible, setHistoryModalVisible] = useState(false);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [auditTrailVisible, setAuditTrailVisible] = useState(false);
@@ -38,62 +44,129 @@ export default function KashragReportScreen() {
 
   const fetchDevices = useCallback(async () => {
     if (!selectedDohId) return;
-    setLoading(true);
     try {
       const data = await getAllDevices(selectedDohId);
       setDevices(data);
     } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
+      console.error("Error fetching devices manually in Kashrag:", error);
     }
   }, [selectedDohId]);
 
+  // Real-time synchronization for all devices matching current dohId
   useEffect(() => {
-    fetchDevices();
+    if (!selectedDohId) {
+      setDevices([]);
+      setLoading(false);
+      return;
+    }
 
-    if (!selectedDohId) return;
-
-    const docId = getDailyDocId(selectedDohId);
-    const docRef = doc(db, 'verificationSessions', docId);
-
-    const unsubscribe = onSnapshot(docRef, async (snap) => {
-      try {
-        if (!snap.exists()) {
-          setActiveSession(null);
-          return;
-        }
-        
-        const sessionData = { id: snap.id, ...snap.data() } as VerificationSession;
-        
-        if (sessionData.globalStatus === 'archived') {
-          setActiveSession(null);
-        } else if (sessionData.expiresAt.toMillis() < Date.now()) {
-          if (!isArchivingRef.current) {
-            isArchivingRef.current = true;
-            try {
-              const currentDevices = await getAllDevices(selectedDohId);
-              await archiveSession(sessionData, currentDevices);
-            } finally {
-              isArchivingRef.current = false;
-            }
-          }
-          setActiveSession(null);
-        } else {
-          setActiveSession(sessionData);
-        }
-      } catch (error) {
-        console.error("Error processing snapshot in Kashrag:", error);
+    setLoading(true);
+    const unsubscribe = subscribeToAllDevices(
+      selectedDohId,
+      (liveDevices) => {
+        setDevices(liveDevices);
+        setLoading(false);
+      },
+      (error) => {
+        console.error("Error in Kashrag live devices subscription:", error);
+        setLoading(false);
       }
-    }, (error) => {
-      console.error("Snapshot error in Kashrag:", error);
-      Alert.alert('שגיאה', 'אבד החיבור לשרת. מנסה להתחבר מחדש...');
-    });
+    );
 
     return () => {
       unsubscribe();
     };
-  }, [selectedDohId, fetchDevices]);
+  }, [selectedDohId]);
+
+  // Real-time synchronization with active verification session & sweeper for expired sessions
+  useEffect(() => {
+    if (!selectedDohId) return;
+
+    let isMounted = true;
+    let unsubscribe: (() => void) | null = null;
+
+    const setupSession = async () => {
+      // 1. Run sweeper for expired sessions BEFORE generating today's getDailyDocId
+      try {
+        await archiveExpiredSessions(selectedDohId);
+      } catch (err) {
+        console.error("Error running archiveExpiredSessions sweeper:", err);
+      }
+
+      if (!isMounted) return;
+
+      // 2. Generate today's getDailyDocId and subscribe to live session
+      const docId = getDailyDocId(selectedDohId);
+      const docRef = doc(db, 'verificationSessions', docId);
+
+      unsubscribe = onSnapshot(docRef, async (snap) => {
+        try {
+          if (!snap.exists()) {
+            setActiveSession(null);
+            return;
+          }
+          
+          const sessionData = { id: snap.id, ...snap.data() } as VerificationSession;
+          
+          if (sessionData.globalStatus === 'archived') {
+            setActiveSession(null);
+          } else if (sessionData.expiresAt.toMillis() < Date.now()) {
+            if (!isArchivingRef.current) {
+              isArchivingRef.current = true;
+              try {
+                const currentDevices = await getAllDevices(selectedDohId);
+                await archiveSession(sessionData, currentDevices, {
+                  autoArchivedIncomplete: true,
+                  completionNotes: 'אורכב אוטומטית בחצות - הדו"ח לא הושלם במלואו'
+                });
+              } finally {
+                isArchivingRef.current = false;
+              }
+            }
+            setActiveSession(null);
+          } else {
+            setActiveSession(sessionData);
+          }
+        } catch (error) {
+          console.error("Error processing snapshot in Kashrag:", error);
+        }
+      }, (error) => {
+        console.error("Snapshot error in Kashrag:", error);
+        Alert.alert('שגיאה', 'אבד החיבור לשרת. מנסה להתחבר מחדש...');
+      });
+    };
+
+    setupSession();
+
+    return () => {
+      isMounted = false;
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [selectedDohId]);
+
+  // Real-time synchronization for verified devices subcollection
+  useEffect(() => {
+    if (!activeSession?.id) {
+      setVerifiedDevicesMap({});
+      return;
+    }
+
+    const unsubscribe = subscribeToVerifiedDevices(
+      activeSession.id,
+      (map) => {
+        setVerifiedDevicesMap(map);
+      },
+      (error) => {
+        console.error("Error subscribing to verified devices in Kashrag:", error);
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [activeSession?.id]);
 
   const handleDelete = async (deviceId: string) => {
     if (Platform.OS === 'web') {
@@ -155,6 +228,35 @@ export default function KashragReportScreen() {
 
   const groupKeys = useMemo(() => Object.keys(groupedDevices).sort(), [groupedDevices]);
 
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+
+  const toggleSection = useCallback((key: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }, []);
+
+  const sections = useMemo(() => {
+    const isSearching = searchQuery.trim().length > 0;
+    return groupKeys.map(key => {
+      const items = groupedDevices[key] || [];
+      const isExpanded = isSearching || expandedSections.has(key);
+      return {
+        title: key,
+        summary: `${items.length} פריטים`,
+        isExpanded,
+        data: isExpanded ? items : [],
+      };
+    });
+  }, [groupKeys, groupedDevices, expandedSections, searchQuery]);
+
   const handleLogout = () => {
     if (Platform.OS === 'web') {
       if (window.confirm('האם אתה בטוח שברצונך להתנתק?')) {
@@ -172,6 +274,112 @@ export default function KashragReportScreen() {
     );
   };
 
+  const platoonStats = useMemo(() => {
+    if (!activeSession) return { platoons: [], platoonTotals: {}, platoonVerified: {} };
+    
+    const totals: Record<string, number> = {};
+    const verifiedStats: Record<string, number> = {};
+    
+    devices.forEach(d => {
+      const p = d.assignment || 'ללא שיוך';
+      totals[p] = (totals[p] || 0) + 1;
+      
+      if (d.id && (verifiedDevicesMap[d.id] || activeSession.verifiedDevices?.[d.id])) {
+        verifiedStats[p] = (verifiedStats[p] || 0) + 1;
+      }
+    });
+
+    return {
+      platoons: Object.keys(totals).sort(),
+      platoonTotals: totals,
+      platoonVerified: verifiedStats
+    };
+  }, [devices, activeSession, verifiedDevicesMap]);
+
+  const handleReopenPlatoon = useCallback(async (platoonName: string) => {
+    if (!selectedDohId) return;
+    try {
+      setLoading(true);
+      await reopenKashpalSession(selectedDohId, platoonName);
+      if (Platform.OS === 'web') {
+        window.alert(`דו"ח ${platoonName} נפתח מחדש בהצלחה להמשך אימות.`);
+      } else {
+        Alert.alert('הצלחה', `דו"ח ${platoonName} נפתח מחדש בהצלחה להמשך אימות.`);
+      }
+    } catch (err) {
+      console.error("Error reopening platoon:", err);
+      if (Platform.OS === 'web') {
+        window.alert('לא ניתן לפתוח מחדש את הפלוגה.');
+      } else {
+        Alert.alert('שגיאה', 'לא ניתן לפתוח מחדש את הפלוגה.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedDohId]);
+
+  const confirmReopenPlatoon = useCallback((platoonName: string) => {
+    const message = `האם לפתוח מחדש את דו"ח ${platoonName} עבור הקשפ"ל? הקשפ"ל יוכל להמשיך לספור ולאמת פריטים נוספים.`;
+    if (Platform.OS === 'web') {
+      if (window.confirm(message)) {
+        handleReopenPlatoon(platoonName);
+      }
+      return;
+    }
+    Alert.alert(
+      'פתיחה מחדש של פלוגה',
+      message,
+      [
+        { text: 'ביטול', style: 'cancel' },
+        { text: 'פתח מחדש', onPress: () => handleReopenPlatoon(platoonName) }
+      ]
+    );
+  }, [handleReopenPlatoon]);
+
+  const handleResetPlatoon = useCallback(async (platoonName: string) => {
+    if (!selectedDohId) return;
+    try {
+      setLoading(true);
+      await resetPlatoonSession(selectedDohId, platoonName);
+      if (Platform.OS === 'web') {
+        window.alert(`נתוני ${platoonName} אופסו בהצלחה ל-0%.`);
+      } else {
+        Alert.alert('הצלחה', `נתוני ${platoonName} אופסו בהצלחה ל-0%.`);
+      }
+    } catch (err) {
+      console.error("Error resetting platoon:", err);
+      if (Platform.OS === 'web') {
+        window.alert('לא ניתן לאפס את הפלוגה.');
+      } else {
+        Alert.alert('שגיאה', 'לא ניתן לאפס את הפלוגה.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedDohId]);
+
+  const confirmResetPlatoon = useCallback((platoonName: string) => {
+    const message = `האם אתה בטוח שברצונך לאפס את נתוני האימות של ${platoonName}?\nכל פריטי ${platoonName} יחזרו למצב 'ממתין' (0%), ושאר הפלוגות יישארו ללא שינוי.`;
+    if (Platform.OS === 'web') {
+      if (window.confirm(message)) {
+        handleResetPlatoon(platoonName);
+      }
+      return;
+    }
+    Alert.alert(
+      `איפוס נתוני ${platoonName}`,
+      message,
+      [
+        { text: 'ביטול', style: 'cancel' },
+        { 
+          text: 'אפס פלוגה', 
+          style: 'destructive',
+          onPress: () => handleResetPlatoon(platoonName) 
+        }
+      ]
+    );
+  }, [handleResetPlatoon]);
+
   const handleStartSession = async () => {
     if (!selectedDohId) return;
     try {
@@ -186,25 +394,80 @@ export default function KashragReportScreen() {
   const handleEndSession = async () => {
     if (!activeSession) return;
     
-    const confirmMessage = 'האם אתה בטוח שברצונך לסיים את הדו"ח הנוכחי? הנתונים יישמרו בהיסטוריה.';
+    const { platoons, platoonTotals, platoonVerified } = platoonStats;
+    const totalBattalionDevices = devices.length;
+    const verifiedBattalionDevices = Object.values(platoonVerified).reduce((a, b) => a + b, 0);
+    const missingBattalionDevices = Math.max(0, totalBattalionDevices - verifiedBattalionDevices);
+
+    const openPlatoons: string[] = [];
+    const missingPlatoons: string[] = [];
+
+    platoons.forEach(p => {
+      const pData = activeSession.platoons?.[p];
+      const pTotal = platoonTotals[p] || 0;
+      const pVer = platoonVerified[p] || 0;
+      if (!pData || pData.status !== 'completed') {
+        openPlatoons.push(`${p} (טרם סיימה - ${pVer}/${pTotal})`);
+      } else if (pVer < pTotal) {
+        missingPlatoons.push(`${p} (${pTotal - pVer} חסרים)`);
+      }
+    });
+
+    const isAllComplete = missingBattalionDevices === 0 && openPlatoons.length === 0;
+
+    let confirmTitle = 'סיום דו"ח גדודי מושלם ✅';
+    let confirmMessage = `כל ${totalBattalionDevices} הפריטים בכל הפלוגות אומתו בהצלחה!\nהאם לנעול ולארכב את הדו"ח בהיסטוריה?`;
+
+    if (!isAllComplete) {
+      confirmTitle = '⚠️ אזהרה: הדו"ח הגדודי אינו שלם!';
+      confirmMessage = `שים לב: אומתו ${verifiedBattalionDevices} מתוך ${totalBattalionDevices} פריטים בגדוד.\n`;
+      if (missingBattalionDevices > 0) {
+        confirmMessage += `נותרו ${missingBattalionDevices} פריטים שלא אומתו!\n\n`;
+      }
+      if (openPlatoons.length > 0) {
+        confirmMessage += `פלוגות שטרם סיימו:\n• ${openPlatoons.join('\n• ')}\n\n`;
+      }
+      if (missingPlatoons.length > 0) {
+        confirmMessage += `פלוגות שסיימו עם חוסרים:\n• ${missingPlatoons.join('\n• ')}\n\n`;
+      }
+      confirmMessage += 'נעילת הדו"ח כעת תארכב את הנתונים כדו"ח עם חוסרים בהיסטוריה.\nהאם ברצונך לסיים ולנעול בכל זאת?';
+    }
+
     const processEndSession = async () => {
       setLoading(true);
-      const currentDevices = await getAllDevices(selectedDohId as string);
-      await archiveSession(activeSession, currentDevices);
-      setLoading(false);
+      try {
+        const currentDevices = await getAllDevices(selectedDohId as string);
+        await archiveSession(activeSession, currentDevices, isAllComplete ? undefined : {
+          autoArchivedIncomplete: false,
+          completionNotes: `הסתיים עם חוסרים ע"י קשר"ג (${missingBattalionDevices} פריטים לא אומתו)`
+        });
+      } catch (err) {
+        console.error("Error archiving session:", err);
+        Alert.alert('שגיאה', 'לא ניתן לנעול את הדו"ח. אנא נסה שוב.');
+      } finally {
+        setLoading(false);
+      }
     };
 
     if (Platform.OS === 'web') {
-      if (window.confirm(confirmMessage)) {
+      if (window.confirm(`${confirmTitle}\n\n${confirmMessage}`)) {
         await processEndSession();
       }
       return;
     }
 
-    Alert.alert('סיום דו"ח ושמירה', confirmMessage, [
-      { text: 'ביטול', style: 'cancel' },
-      { text: 'סיים ושמור', style: 'default', onPress: processEndSession }
-    ]);
+    Alert.alert(
+      confirmTitle, 
+      confirmMessage, 
+      [
+        { text: isAllComplete ? 'ביטול' : 'המשך מסדר', style: 'cancel' },
+        { 
+          text: isAllComplete ? 'סיים ושמור' : 'נעל עם חוסרים', 
+          style: isAllComplete ? 'default' : 'destructive', 
+          onPress: processEndSession 
+        }
+      ]
+    );
   };
 
   const handleResetSession = async () => {
@@ -264,28 +527,6 @@ export default function KashragReportScreen() {
     }
   };
 
-  const platoonStats = useMemo(() => {
-    if (!activeSession) return { platoons: [], platoonTotals: {}, platoonVerified: {} };
-    
-    const totals: Record<string, number> = {};
-    const verifiedStats: Record<string, number> = {};
-    
-    devices.forEach(d => {
-      const p = d.assignment || 'ללא שיוך';
-      totals[p] = (totals[p] || 0) + 1;
-      
-      if (d.id && activeSession.verifiedDevices?.[d.id]) {
-        verifiedStats[p] = (verifiedStats[p] || 0) + 1;
-      }
-    });
-
-    return {
-      platoons: Object.keys(totals).sort(),
-      platoonTotals: totals,
-      platoonVerified: verifiedStats
-    };
-  }, [devices, activeSession]);
-
   const renderStatusBars = () => {
     if (!activeSession) return null;
     
@@ -300,23 +541,47 @@ export default function KashragReportScreen() {
           const platoonData = activeSession.platoons?.[p];
           const isStarted = !!platoonData;
           const isCompleted = platoonData?.status === 'completed';
+          const isFullyVerified = isCompleted && verified === total && total > 0;
+          const isCompletedWithMissing = isCompleted && verified < total;
           
           return (
             <View key={p} style={styles.progressBarRow}>
               <Text style={styles.progressLabel}>
                 {p} 
-                {isCompleted ? ' ✅' : (isStarted ? ' 🔄' : '')}
+                {isFullyVerified ? ' ✅' : (isCompletedWithMissing ? ' ⚠️' : (isStarted ? ' 🔄' : ''))}
               </Text>
               <View style={styles.progressBarBg}>
                 <View style={[
                   styles.progressBarFill, 
                   { 
                     width: `${percentage}%`,
-                    backgroundColor: isCompleted ? theme.colors.success : theme.colors.primary
+                    backgroundColor: isFullyVerified 
+                      ? theme.colors.success 
+                      : (isCompletedWithMissing ? '#D97706' : theme.colors.primary)
                   }
                 ]} />
               </View>
               <Text style={styles.progressText}>{verified}/{total}</Text>
+              {isStarted && (
+                <TouchableOpacity
+                  style={styles.miniResetBtn}
+                  onPress={() => confirmResetPlatoon(p)}
+                  activeOpacity={0.7}
+                  accessibilityLabel={`אפס נתוני ${p}`}
+                >
+                  <Feather name="refresh-ccw" size={11} color={theme.colors.danger} />
+                </TouchableOpacity>
+              )}
+              {isCompleted && (
+                <TouchableOpacity
+                  style={styles.miniReopenBtn}
+                  onPress={() => confirmReopenPlatoon(p)}
+                  activeOpacity={0.7}
+                >
+                  <Feather name="unlock" size={12} color="#D97706" />
+                  <Text style={styles.miniReopenText}>פתח</Text>
+                </TouchableOpacity>
+              )}
             </View>
           );
         })}
@@ -324,8 +589,153 @@ export default function KashragReportScreen() {
     );
   };
 
+  const renderSectionHeader = useCallback(({ section }: { section: { title: string; summary: string; isExpanded: boolean } }) => {
+    const isPlatoonGroup = groupBy === 'platoons';
+    const platoonData = isPlatoonGroup && activeSession?.platoons ? activeSession.platoons[section.title] : null;
+    const isStarted = !!platoonData;
+    const isCompleted = platoonData?.status === 'completed';
+
+    return (
+      <View style={styles.accordionHeaderContainer}>
+        <TouchableOpacity 
+          style={styles.accordionHeader} 
+          onPress={() => toggleSection(section.title)} 
+          activeOpacity={0.7}
+        >
+          <View style={styles.accordionHeaderContent}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={styles.accordionTitle}>{section.title}</Text>
+              {isCompleted && (
+                <View style={styles.completedBadge}>
+                  <Text style={styles.completedBadgeText}>ננעל ע&quot;י קשפ&quot;ל</Text>
+                </View>
+              )}
+            </View>
+            {section.summary ? <Text style={styles.accordionSummary}>{section.summary}</Text> : null}
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            {isPlatoonGroup && isStarted && (
+              <TouchableOpacity
+                style={styles.resetPlatoonButton}
+                onPress={(e) => {
+                  e?.stopPropagation?.();
+                  confirmResetPlatoon(section.title);
+                }}
+                activeOpacity={0.8}
+              >
+                <Feather name="refresh-ccw" size={12} color={theme.colors.danger} />
+                <Text style={styles.resetPlatoonButtonText}>אפס</Text>
+              </TouchableOpacity>
+            )}
+            {isCompleted && (
+              <TouchableOpacity
+                style={styles.reopenButton}
+                onPress={(e) => {
+                  e?.stopPropagation?.();
+                  confirmReopenPlatoon(section.title);
+                }}
+                activeOpacity={0.8}
+              >
+                <Feather name="unlock" size={13} color="#D97706" />
+                <Text style={styles.reopenButtonText}>פתח מחדש</Text>
+              </TouchableOpacity>
+            )}
+            <Text style={styles.accordionIcon}>{section.isExpanded ? '▲' : '▼'}</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+    );
+  }, [toggleSection, groupBy, activeSession, confirmReopenPlatoon, confirmResetPlatoon]);
+
+  const renderDeviceItem = useCallback(({ item: device }: { item: Device }) => {
+    const fault = device.faultStatus;
+    return (
+      <View 
+        style={[
+          styles.deviceRow,
+          fault === 'inspection' && styles.deviceRowInspection,
+          fault === 'replacement' && styles.deviceRowReplacement
+        ]}
+      >
+        <View style={styles.actionButtons}>
+          <TouchableOpacity 
+            style={[
+              styles.iconButton, 
+              fault && (fault === 'replacement' ? styles.iconButtonFaultRed : styles.iconButtonFaultOrange)
+            ]} 
+            onPress={() => {
+              if (fault === 'replacement') {
+                setReplacingDevice(device);
+              } else {
+                setFaultModalDevice(device);
+                setIsFaultModalVisible(true);
+              }
+            }}
+          >
+            <Feather 
+              name="alert-triangle" 
+              size={16} 
+              color={fault === 'replacement' ? '#DC2626' : (fault === 'inspection' ? '#D97706' : theme.colors.textMuted)} 
+            />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.iconButton} 
+            onPress={() => setTransferDevice(device)}
+          >
+            <Feather name="repeat" size={18} color={theme.colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.iconButton} 
+            onPress={() => setHistoryDevice(device)}
+          >
+            <Feather name="clock" size={18} color={theme.colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.iconButton, styles.iconButtonDanger]} 
+            onPress={() => device.id && handleDelete(device.id)}
+          >
+            <Feather name="trash-2" size={18} color={theme.colors.danger} />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.deviceInfo}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <Text style={styles.deviceType}>{device.type}</Text>
+            {fault === 'inspection' && (
+              <View style={styles.faultBadgeInspection}>
+                <Feather name="alert-circle" size={10} color="#B45309" />
+                <Text style={styles.faultBadgeTextInspection}>דרושה בדיקת קשר</Text>
+              </View>
+            )}
+            {fault === 'replacement' && (
+              <TouchableOpacity 
+                style={styles.faultBadgeReplacement}
+                onPress={() => setReplacingDevice(device)}
+                activeOpacity={0.7}
+              >
+                <Feather name="alert-octagon" size={10} color="#B91C1C" />
+                <Text style={styles.faultBadgeTextReplacement}>דורש החלפה</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <Text style={styles.deviceTsadi}>צ&apos;: <Text style={styles.tsadiHighlight}>{device.tsadiNumber}</Text></Text>
+          {groupBy === 'types' ? (
+            <View style={styles.tagContainer}>
+              <Text style={styles.tagText}>{device.assignment}</Text>
+              {device.location ? <Text style={styles.tagText}>{device.location}</Text> : null}
+            </View>
+          ) : device.location ? (
+            <View style={styles.tagContainer}>
+              <Text style={styles.tagText}>{device.location}</Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+    );
+  }, [groupBy]);
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }}>
+      <OfflineBanner />
       <View style={styles.topHeader}>
         <TouchableOpacity style={styles.topHeaderIconOut} onPress={handleLogout}>
           <Feather name="log-out" size={18} color={theme.colors.danger} />
@@ -358,19 +768,25 @@ export default function KashragReportScreen() {
             <ActivityIndicator size="large" color={theme.colors.primary} />
           </View>
         ) : (
-          <FlatList
+          <SectionList
             style={styles.container}
             contentContainerStyle={{ paddingBottom: 100 }}
             keyboardShouldPersistTaps="handled"
-            data={groupKeys}
-            keyExtractor={(key) => key}
+            sections={sections}
+            keyExtractor={(item) => item.id || item.tsadiNumber}
+            renderItem={renderDeviceItem}
+            renderSectionHeader={renderSectionHeader}
+            stickySectionHeadersEnabled={false}
+            initialNumToRender={15}
+            maxToRenderPerBatch={10}
+            windowSize={5}
             ListHeaderComponent={
               <View style={{ marginBottom: 16 }}>
                 <View style={[styles.statusBoardContainer, { paddingHorizontal: 0, paddingBottom: 16 }]}>
                   {activeSession && activeSession.globalStatus !== 'pending' && activeSession.globalStatus !== 'archived' ? (
                     <View style={styles.activeSessionBoard}>
                       <View style={styles.boardHeader}>
-                        <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 8 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                           <View style={styles.pulsingIndicator} />
                           <Text style={styles.boardTitle}>דו&quot;ח יומי פעיל</Text>
                         </View>
@@ -388,7 +804,7 @@ export default function KashragReportScreen() {
                       </View>
                       {renderStatusBars()}
                       {activeSession.globalStatus !== 'active' && (
-                        <View style={{flexDirection: 'row-reverse', gap: 12, marginTop: 24}}>
+                        <View style={{flexDirection: 'row', gap: 12, marginTop: 24}}>
                           <TouchableOpacity style={styles.startSessionBtn} onPress={handleStartSession}>
                             <Feather name="play" size={16} color="#FFF" />
                             <Text style={styles.startSessionBtnText}>הפעל דו&quot;ח לכל הפלוגות</Text>
@@ -403,7 +819,7 @@ export default function KashragReportScreen() {
                   ) : (
                     <View style={styles.noSessionBoard}>
                       <Text style={styles.noSessionText}>אין דו&quot;ח יומי פעיל</Text>
-                      <View style={{flexDirection: 'row-reverse', gap: 10, marginTop: 10}}>
+                      <View style={{flexDirection: 'row', gap: 10, marginTop: 10}}>
                         <TouchableOpacity style={styles.startSessionBtn} onPress={handleStartSession}>
                           <Text style={styles.startSessionBtnText}>פתח דו&quot;ח יומי</Text>
                         </TouchableOpacity>
@@ -445,54 +861,6 @@ export default function KashragReportScreen() {
               </View>
             }
             ListEmptyComponent={<Text style={styles.emptyText}>לא נמצא ציוד.</Text>}
-            renderItem={({ item: key }) => {
-              const groupItems = groupedDevices[key];
-              return (
-                <Accordion 
-                  title={key} 
-                  summary={`${groupItems.length} פריטים`}
-                >
-                  {groupItems.map(device => (
-                    <View key={device.id} style={styles.deviceRow}>
-                      <View style={styles.actionButtons}>
-                        <TouchableOpacity 
-                          style={styles.iconButton} 
-                          onPress={() => setTransferDevice(device)}
-                        >
-                          <Feather name="repeat" size={18} color={theme.colors.primary} />
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                          style={styles.iconButton} 
-                          onPress={() => setHistoryDevice(device)}
-                        >
-                          <Feather name="clock" size={18} color={theme.colors.primary} />
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                          style={[styles.iconButton, styles.iconButtonDanger]} 
-                          onPress={() => device.id && handleDelete(device.id)}
-                        >
-                          <Feather name="trash-2" size={18} color={theme.colors.danger} />
-                        </TouchableOpacity>
-                      </View>
-                      <View style={styles.deviceInfo}>
-                        <Text style={styles.deviceType}>{device.type}</Text>
-                        <Text style={styles.deviceTsadi}>צ&apos;: <Text style={styles.tsadiHighlight}>{device.tsadiNumber}</Text></Text>
-                        {groupBy === 'types' ? (
-                          <View style={styles.tagContainer}>
-                            <Text style={styles.tagText}>{device.assignment}</Text>
-                            {device.location ? <Text style={styles.tagText}>{device.location}</Text> : null}
-                          </View>
-                        ) : device.location ? (
-                          <View style={styles.tagContainer}>
-                            <Text style={styles.tagText}>{device.location}</Text>
-                          </View>
-                        ) : null}
-                      </View>
-                    </View>
-                  ))}
-                </Accordion>
-              );
-            }}
           />
         )}
       </View>
@@ -530,6 +898,24 @@ export default function KashragReportScreen() {
       <DailySummaryModal
         visible={auditTrailVisible}
         onClose={() => setAuditTrailVisible(false)}
+        dohId={selectedDohId || ''}
+      />
+
+      <ReportFaultModal
+        visible={isFaultModalVisible}
+        initialDevice={faultModalDevice}
+        onClose={() => {
+          setIsFaultModalVisible(false);
+          setFaultModalDevice(null);
+        }}
+        onSuccess={fetchDevices}
+      />
+
+      <ReplaceDeviceModal
+        visible={!!replacingDevice}
+        device={replacingDevice}
+        onClose={() => setReplacingDevice(null)}
+        onReplaced={fetchDevices}
       />
       
       <View style={styles.bottomNav}>
@@ -569,7 +955,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   topHeader: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     width: '100%',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -614,13 +1000,13 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   actionRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     justifyContent: 'center',
     gap: 12,
     marginBottom: 16,
   },
   actionBtn: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     paddingHorizontal: 16,
@@ -658,7 +1044,7 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.md,
   },
   startSessionBtn: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
@@ -673,7 +1059,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   historyLogsBtn: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     backgroundColor: '#F8FAFC',
@@ -701,7 +1087,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   boardHeader: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 24,
@@ -746,7 +1132,7 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   progressBarRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
@@ -763,7 +1149,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surfaceLight,
     borderRadius: theme.borderRadius.full,
     overflow: 'hidden',
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
   },
   progressBarFill: {
     height: '100%',
@@ -782,7 +1168,7 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.sm,
   },
   searchContainer: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: theme.colors.surface,
     borderRadius: theme.borderRadius.full,
@@ -841,8 +1227,57 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
   },
+  accordionHeaderContainer: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
+    marginTop: 10,
+    marginBottom: 6,
+    marginHorizontal: 16,
+    overflow: 'hidden',
+    elevation: 2,
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRightWidth: 4,
+    borderRightColor: theme.colors.primary,
+  },
+  accordionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: 'rgba(67, 56, 202, 0.03)',
+  },
+  accordionHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  accordionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: theme.colors.text,
+  },
+  accordionSummary: {
+    fontSize: 14,
+    color: theme.colors.textMuted,
+    backgroundColor: theme.colors.background,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  accordionIcon: {
+    fontSize: 16,
+    color: theme.colors.textMuted,
+  },
   deviceRow: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 16,
@@ -850,7 +1285,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
     borderRadius: 16,
-    marginBottom: 12,
+    marginBottom: 8,
+    marginHorizontal: 16,
   },
   deviceInfo: {
     alignItems: 'flex-end',
@@ -871,9 +1307,10 @@ const styles = StyleSheet.create({
   },
   tsadiHighlight: {
     color: theme.colors.text,
+    fontWeight: '800',
   },
   tagContainer: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     gap: 6,
     marginTop: 4,
   },
@@ -903,6 +1340,68 @@ const styles = StyleSheet.create({
   },
   iconButtonDanger: {
     backgroundColor: 'rgba(239, 68, 68, 0.1)',
+  },
+  iconButtonFaultOrange: {
+    backgroundColor: '#FEF3C7',
+  },
+  iconButtonFaultRed: {
+    backgroundColor: '#FEE2E2',
+  },
+  deviceRowInspection: {
+    borderColor: '#F59E0B',
+    backgroundColor: '#FFFDF5',
+    borderWidth: 1.5,
+  },
+  deviceRowReplacement: {
+    borderColor: '#EF4444',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1.5,
+  },
+  faultBadgeInspection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  faultBadgeTextInspection: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#B45309',
+  },
+  faultBadgeReplacement: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  faultBadgeTextReplacement: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#B91C1C',
+  },
+  brigadeReplaceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  brigadeReplaceBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
   },
 
   fab: {
@@ -947,5 +1446,73 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: theme.colors.textMuted,
     fontWeight: '500',
+  },
+  miniReopenBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  miniReopenText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#D97706',
+  },
+  completedBadge: {
+    backgroundColor: 'rgba(15, 76, 58, 0.1)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(15, 76, 58, 0.2)',
+  },
+  completedBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: theme.colors.primary,
+  },
+  reopenButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  reopenButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#D97706',
+  },
+  miniResetBtn: {
+    padding: 4,
+    borderRadius: 6,
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resetPlatoonButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  resetPlatoonButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: theme.colors.danger,
   },
 });

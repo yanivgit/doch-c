@@ -11,9 +11,9 @@ export const theme = {
     success: '#10B981', // Emerald Green
     warning: '#F59E0B', // Amber
     danger: '#EF4444', // Crisp Red
-    text: '#1E293B', // Very dark slate for high readability
-    textMuted: '#64748B', // Soft slate for secondary info (darker than dark mode)
-    border: '#E2E8F0', // Light border
+    text: '#0F172A', // High-contrast tactical slate-900 for primary text
+    textMuted: '#334155', // High-contrast tactical slate-700 for secondary text and labels
+    border: '#CBD5E1', // Higher contrast border for direct sunlight visibility
     overlay: 'rgba(15, 23, 42, 0.4)', // Dark slate overlay
   },
   spacing: {

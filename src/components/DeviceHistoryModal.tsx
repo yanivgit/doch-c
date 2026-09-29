@@ -81,8 +81,8 @@ export default function DeviceHistoryModal({ device, visible, onClose }: DeviceH
               {logs.length === 0 ? (
                 <Text style={styles.emptyText}>לא נמצאה היסטוריה למכשיר זה.</Text>
               ) : (
-                logs.map((log) => (
-                  <View key={log.id} style={styles.logCard}>
+                logs.map((log, idx) => (
+                  <View key={log.id || `${log.action}-${idx}`} style={styles.logCard}>
                     <View style={styles.logHeader}>
                       <Text style={styles.logDate}>{formatDate(log.timestamp)}</Text>
                       <View style={styles.actionBadge}>
