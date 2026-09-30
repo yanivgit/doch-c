@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, SectionList, TouchableOpacity, ActivityIndicator, Alert, TextInput, Platform, LayoutAnimation } from 'react-native';
+import { View, Text, StyleSheet, SectionList, TouchableOpacity, ActivityIndicator, Alert, TextInput, Platform, LayoutAnimation, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useApp } from '../../../context/AppContext';
@@ -13,14 +13,15 @@ import DeviceHistoryModal from '../../../components/DeviceHistoryModal';
 import Snackbar from '../../../components/Snackbar';
 import { theme } from '../../../theme/theme';
 import VerificationHistoryModal from '../../../components/VerificationHistoryModal';
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import DailySummaryModal from '../../../components/DailySummaryModal';
 import ReportFaultModal from '../../../components/ReportFaultModal';
 import ReplaceDeviceModal from '../../../components/ReplaceDeviceModal';
 import OfflineBanner from '../../../components/OfflineBanner';
 
 export default function KashragReportScreen() {
-  const { selectedDohId, selectedDohName, logout } = useApp();
+  const router = useRouter();
+  const { selectedDohId, selectedDohName, logout, login } = useApp();
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
@@ -42,6 +43,50 @@ export default function KashragReportScreen() {
   const [auditTrailVisible, setAuditTrailVisible] = useState(false);
   const isArchivingRef = useRef(false);
 
+  // Floating Bottom Navigation State & Animation
+  const [isBarExpanded, setIsBarExpanded] = useState(true);
+  const [barTranslateY] = useState(() => new Animated.Value(0));
+  const [barOpacity] = useState(() => new Animated.Value(1));
+  const [fabScale] = useState(() => new Animated.Value(1));
+
+  const toggleBar = useCallback(() => {
+    Animated.sequence([
+      Animated.timing(fabScale, { toValue: 0.88, duration: 80, useNativeDriver: true }),
+      Animated.timing(fabScale, { toValue: 1, duration: 80, useNativeDriver: true }),
+    ]).start();
+    setIsBarExpanded(prev => !prev);
+  }, [fabScale]);
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(barTranslateY, {
+        toValue: isBarExpanded ? 0 : 95,
+        friction: 8,
+        tension: 50,
+        useNativeDriver: true,
+      }),
+      Animated.timing(barOpacity, {
+        toValue: isBarExpanded ? 1 : 0,
+        duration: isBarExpanded ? 220 : 180,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [isBarExpanded, barTranslateY, barOpacity]);
+
+  const handleGoToKashpal = useCallback(() => {
+    login('Kashpal');
+    router.replace('/report/kashpal');
+  }, [login, router]);
+
+  const handleOpenTimeline = useCallback(() => {
+    setAuditTrailVisible(true);
+  }, []);
+
+  const handleGoToLogin = useCallback(async () => {
+    await logout();
+    router.replace('/');
+  }, [logout, router]);
+
   const fetchDevices = useCallback(async () => {
     if (!selectedDohId) return;
     try {
@@ -51,6 +96,10 @@ export default function KashragReportScreen() {
       console.error("Error fetching devices manually in Kashrag:", error);
     }
   }, [selectedDohId]);
+
+  const handleKashragPress = useCallback(() => {
+    fetchDevices();
+  }, [fetchDevices]);
 
   // Real-time synchronization for all devices matching current dohId
   useEffect(() => {
@@ -740,7 +789,7 @@ export default function KashragReportScreen() {
         <TouchableOpacity style={styles.topHeaderIconOut} onPress={handleLogout}>
           <Feather name="log-out" size={18} color={theme.colors.danger} />
         </TouchableOpacity>
-        <Text style={styles.topHeaderText}>דו"ח ציוד טקטי • מחזור א׳</Text>
+        <Text style={styles.topHeaderText}>דו&quot;ח ציוד טקטי • מחזור א׳</Text>
         <TouchableOpacity style={styles.topHeaderIconIn}>
           <Feather name="shield" size={18} color="#fff" />
         </TouchableOpacity>
@@ -748,17 +797,21 @@ export default function KashragReportScreen() {
 
       <View style={styles.header}>
         <Text style={styles.title}>Command Center</Text>
-        <Text style={styles.subtitle}>ניהול ציוד ודיווח (קשר"ג)</Text>
+        <Text style={styles.subtitle}>ניהול ציוד ודיווח (קשר&quot;ג)</Text>
       </View>
 
       <View style={styles.actionRow}>
         <TouchableOpacity style={styles.actionBtn} onPress={handleCopyReport}>
           <Feather name="copy" size={16} color={theme.colors.accent} />
-          <Text style={styles.actionBtnText}>העתק דו"ח</Text>
+          <Text style={styles.actionBtnText}>העתק דו&quot;ח</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.actionBtn, {backgroundColor: 'rgba(59, 130, 246, 0.1)'}]} onPress={() => setAuditTrailVisible(true)}>
           <Feather name="activity" size={16} color={theme.colors.primary} />
           <Text style={[styles.actionBtnText, {color: theme.colors.primary}]}>יומן אירועים</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.actionBtn, {backgroundColor: 'rgba(15, 76, 58, 0.1)'}]} onPress={() => setModalVisible(true)}>
+          <Feather name="plus" size={16} color={theme.colors.primary} />
+          <Text style={[styles.actionBtnText, {color: theme.colors.primary}]}>הוסף ציוד</Text>
         </TouchableOpacity>
       </View>
 
@@ -865,11 +918,6 @@ export default function KashragReportScreen() {
         )}
       </View>
 
-      {/* Floating Action Button */}
-      <TouchableOpacity style={styles.fab} onPress={() => setModalVisible(true)}>
-        <Text style={styles.fabIcon}>+</Text>
-      </TouchableOpacity>
-
       <AddDeviceModal 
         visible={modalVisible} 
         onClose={() => setModalVisible(false)} 
@@ -917,24 +965,85 @@ export default function KashragReportScreen() {
         onClose={() => setReplacingDevice(null)}
         onReplaced={fetchDevices}
       />
-      
-      <View style={styles.bottomNav}>
-        <TouchableOpacity style={styles.navItem} onPress={handleLogout}>
-          <Feather name="log-out" size={20} color={theme.colors.textMuted} />
-          <Text style={styles.navText}>יציאה</Text>
-        </TouchableOpacity>
-        <View style={styles.navItem}>
-          <Feather name="clock" size={20} color={theme.colors.textMuted} />
-          <Text style={styles.navText}>ציר זמן</Text>
-        </View>
-        <TouchableOpacity style={styles.navItem} onPress={() => setModalVisible(true)}>
-          <Feather name="plus-circle" size={20} color={theme.colors.textMuted} />
-          <Text style={styles.navText}>הוספת ציוד</Text>
-        </TouchableOpacity>
-        <View style={styles.navItem}>
-          <Feather name="shield" size={20} color={theme.colors.primary} />
-          <Text style={[styles.navText, {color: theme.colors.primary, fontWeight: '700'}]}>קשר"ג</Text>
-        </View>
+      {/* Custom Floating Bottom Navigation Bar */}
+      <View style={styles.floatingNavWrapper} pointerEvents="box-none">
+        {/* Animated White Pill Container */}
+        <Animated.View
+          style={[
+            styles.floatingBarContainer,
+            {
+              transform: [{ translateY: barTranslateY }],
+              opacity: barOpacity,
+            },
+          ]}
+          pointerEvents={isBarExpanded ? 'auto' : 'none'}
+        >
+          {/* 1. קשפ"ל (Rightmost in RTL) */}
+          <TouchableOpacity 
+            style={styles.floatingNavItem} 
+            onPress={handleGoToKashpal}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons name="archive-outline" size={24} color="#475569" />
+            <Text style={styles.floatingNavText}>קשפ&quot;ל</Text>
+          </TouchableOpacity>
+
+          {/* 2. ציר זמן (Middle Right in RTL) */}
+          <TouchableOpacity 
+            style={styles.floatingNavItem} 
+            onPress={handleOpenTimeline}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons name="history" size={24} color="#475569" />
+            <Text style={styles.floatingNavText}>ציר זמן</Text>
+          </TouchableOpacity>
+
+          {/* 3. Center Space Placeholder (where the green + sits) */}
+          <View style={styles.centerButtonPlaceholder} />
+
+          {/* 4. קשר"ג (Middle Left in RTL) */}
+          <TouchableOpacity 
+            style={styles.floatingNavItem} 
+            onPress={handleKashragPress}
+            activeOpacity={0.7}
+          >
+            <MaterialIcons name="military-tech" size={25} color="#0F4C3A" />
+            <Text style={[styles.floatingNavText, styles.floatingNavTextActive]}>קשר&quot;ג</Text>
+          </TouchableOpacity>
+
+          {/* 5. כניסה (Leftmost in RTL) */}
+          <TouchableOpacity 
+            style={styles.floatingNavItem} 
+            onPress={handleGoToLogin}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons name="badge-account-horizontal-outline" size={24} color="#475569" />
+            <Text style={styles.floatingNavText}>כניסה</Text>
+          </TouchableOpacity>
+        </Animated.View>
+
+        {/* Floating Center Green Button (Always visible / anchors in center) */}
+        <Animated.View 
+          style={[
+            styles.centerFabAnchor,
+            {
+              transform: [{ scale: fabScale }],
+            }
+          ]}
+          pointerEvents="box-none"
+        >
+          <TouchableOpacity
+            testID="center-plus-toggle"
+            style={styles.centerFabRing}
+            onPress={toggleBar}
+            onLongPress={() => setModalVisible(true)}
+            activeOpacity={0.85}
+          >
+            <View style={styles.centerFabInner}>
+              <Feather name="plus" size={24} color="#FFFFFF" />
+            </View>
+          </TouchableOpacity>
+        </Animated.View>
       </View>
 
       <Snackbar
@@ -1404,48 +1513,81 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
-  fab: {
+  floatingNavWrapper: {
     position: 'absolute',
-    bottom: 24,
-    right: 24,
+    bottom: Platform.OS === 'ios' ? 24 : 16,
+    left: 16,
+    right: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+  },
+  floatingBarContainer: {
+    width: '100%',
+    maxWidth: 440,
+    height: 64,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+  floatingNavItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  floatingNavText: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#64748B',
+    marginTop: 3,
+  },
+  floatingNavTextActive: {
+    color: '#0F4C3A',
+    fontWeight: '700',
+  },
+  centerButtonPlaceholder: {
     width: 60,
     height: 60,
-    borderRadius: 30,
-    backgroundColor: theme.colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 5,
   },
-  fabIcon: {
-    fontSize: 32,
-    color: 'white',
-    lineHeight: 34,
-  },
-  bottomNav: {
+  centerFabAnchor: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 12,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
-  },
-  navItem: {
     alignItems: 'center',
-    gap: 4,
+    justifyContent: 'center',
+    zIndex: 1001,
   },
-  navText: {
-    fontSize: 10,
-    color: theme.colors.textMuted,
-    fontWeight: '500',
+  centerFabRing: {
+    width: 54,
+    height: 54,
+    borderRadius: 18,
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1.5,
+    borderColor: '#A7F3D0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#0F4C3A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.22,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  centerFabInner: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#0F4C3A',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   miniReopenBtn: {
     flexDirection: 'row',

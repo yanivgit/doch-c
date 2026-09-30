@@ -125,8 +125,59 @@ test.describe('Continuous QA Suite: Doh Ts App', () => {
     await browser.close();
   });
 
-  test('Phase 2: Network Resilience (Offline State Sync)', async () => {
-    // Skipping to keep it simple, just pass immediately so Phase 1 result dictates health
-  });
+  test('Phase 3: Floating Bottom Navigation Bar (Toggle & Visibility)', async () => {
+    const browser = await chromium.launch();
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    page.on('dialog', dialog => dialog.accept());
 
+    await page.goto(URL);
+    await page.locator('text=קשר"ג').first().click();
+
+    const passcode = page.locator('input[placeholder="****"]');
+    await expect(passcode).toBeVisible({ timeout: 5000 });
+    await passcode.fill(PASSCODE);
+    await page.click('text=היכנס');
+
+    await page.waitForURL('**/cycle-selection');
+    
+    // Click first available cycle
+    const cycleItem = page.locator('div[dir="auto"]').filter({ hasText: /Test_Cycle/ }).first();
+    await cycleItem.waitFor({ state: 'visible', timeout: 10000 });
+    await cycleItem.click();
+
+    await page.waitForURL('**/report/kashrag');
+
+    // 1. Verify floating bar items are visible initially
+    console.log('Verifying initial floating bottom navigation bar items...');
+    await expect(page.locator('text=קשפ"ל').last()).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=ציר זמן').last()).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=קשר"ג').last()).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=כניסה').last()).toBeVisible({ timeout: 10000 });
+
+    // 2. Click green + button to toggle / minimize bar
+    console.log('Toggling bar to minimize...');
+    const plusButton = page.getByTestId('center-plus-toggle');
+    await expect(plusButton).toBeVisible();
+    await plusButton.click();
+
+    // Give animation 400ms to slide down
+    await page.waitForTimeout(400);
+
+    // 3. Verify green + button remains visible while bar is minimized
+    await expect(plusButton).toBeVisible();
+
+    // 4. Click green + button again to expand
+    console.log('Toggling bar back to expand...');
+    await plusButton.click();
+    await page.waitForTimeout(400);
+
+    // 5. Verify bar items are back
+    await expect(page.locator('text=קשפ"ל').last()).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('text=ציר זמן').last()).toBeVisible({ timeout: 5000 });
+
+    console.log('SUCCESS: Floating navigation bar toggle fully verified!');
+    await browser.close();
+  });
 });
+
