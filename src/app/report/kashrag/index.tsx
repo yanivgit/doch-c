@@ -641,7 +641,6 @@ export default function KashragReportScreen() {
   const renderSectionHeader = useCallback(({ section }: { section: { title: string; summary: string; isExpanded: boolean } }) => {
     const isPlatoonGroup = groupBy === 'platoons';
     const platoonData = isPlatoonGroup && activeSession?.platoons ? activeSession.platoons[section.title] : null;
-    const isStarted = !!platoonData;
     const isCompleted = platoonData?.status === 'completed';
 
     return (
@@ -663,19 +662,6 @@ export default function KashragReportScreen() {
             {section.summary ? <Text style={styles.accordionSummary}>{section.summary}</Text> : null}
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            {isPlatoonGroup && isStarted && (
-              <TouchableOpacity
-                style={styles.resetPlatoonButton}
-                onPress={(e) => {
-                  e?.stopPropagation?.();
-                  confirmResetPlatoon(section.title);
-                }}
-                activeOpacity={0.8}
-              >
-                <Feather name="refresh-ccw" size={12} color={theme.colors.danger} />
-                <Text style={styles.resetPlatoonButtonText}>אפס</Text>
-              </TouchableOpacity>
-            )}
             {isCompleted && (
               <TouchableOpacity
                 style={styles.reopenButton}
@@ -694,7 +680,7 @@ export default function KashragReportScreen() {
         </TouchableOpacity>
       </View>
     );
-  }, [toggleSection, groupBy, activeSession, confirmReopenPlatoon, confirmResetPlatoon]);
+  }, [toggleSection, groupBy, activeSession, confirmReopenPlatoon]);
 
   const renderDeviceItem = useCallback(({ item: device }: { item: Device }) => {
     const fault = device.faultStatus;

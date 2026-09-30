@@ -210,15 +210,6 @@ export default function DailySummaryModal({ visible, onClose, platoon, dohId }: 
                 <Text style={styles.liveSyncText}>סנכרון מבצעי חי</Text>
               </View>
             </View>
-
-            {/* Sub-action bar */}
-            <TouchableOpacity style={styles.screenshotActionBtn} activeOpacity={0.8}>
-              <View style={styles.screenshotActionRight}>
-                <Feather name="camera" size={16} color="#0284C7" />
-                <Text style={styles.screenshotActionText}>צילום מסך מקורי לאימות נתונים</Text>
-              </View>
-              <Feather name="chevron-down" size={16} color="#64748B" />
-            </TouchableOpacity>
           </View>
 
           {/* 3. Day Navigation Card */}
@@ -553,7 +544,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
   },
   topBannerTitleRow: {
     flexDirection: 'row',
@@ -584,25 +574,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#4338CA',
-  },
-  screenshotActionBtn: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  screenshotActionRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  screenshotActionText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#0F172A',
   },
 
   /* 3. Day Navigation Card */
