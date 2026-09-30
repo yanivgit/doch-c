@@ -810,23 +810,6 @@ export default function KashragReportScreen() {
                 <View style={[styles.statusBoardContainer, { paddingHorizontal: 0, paddingBottom: 16 }]}>
                   {activeSession && activeSession.globalStatus !== 'pending' && activeSession.globalStatus !== 'archived' ? (
                     <View style={styles.activeSessionBoard}>
-                      <View style={styles.boardHeader}>
-                        <View style={styles.boardTitleContainer}>
-                          <View style={styles.pulsingIndicator} />
-                          <Text style={styles.boardTitle}>דו&quot;ח יומי פעיל</Text>
-                        </View>
-                        {activeSession.globalStatus === 'active' ? (
-                          <View style={styles.boardActions}>
-                            <TouchableOpacity style={styles.resetSessionBtn} onPress={handleResetSession}>
-                              <Feather name="refresh-ccw" size={13} color={theme.colors.danger} />
-                              <Text style={styles.resetSessionBtnText}>איפוס</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.endSessionBtn} onPress={handleEndSession}>
-                              <Text style={styles.endSessionBtnText}>סיים דו&quot;ח</Text>
-                            </TouchableOpacity>
-                          </View>
-                        ) : null}
-                      </View>
                       {renderStatusBars()}
                       {activeSession.globalStatus !== 'active' && (
                         <View style={{flexDirection: 'row', gap: 12, marginTop: 24}}>

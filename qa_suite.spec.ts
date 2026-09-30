@@ -153,8 +153,6 @@ test.describe('Continuous QA Suite: Doh Ts App', () => {
     await expect(page.locator('text=דו"ח ציוד טקטי • מחזור א׳')).toBeVisible({ timeout: 5000 });
     await expect(page.locator('text=העתק דו"ח')).toBeVisible({ timeout: 10000 });
     await expect(page.locator('text=Command Center')).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('text=סיים דו"ח')).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('text=איפוס')).toBeVisible({ timeout: 5000 });
 
     await page.screenshot({ path: 'C:/Users/gitma/.gemini/antigravity/brain/349dd5a7-2cae-4628-8789-c9e7db38626a/scratch/kashrag_verified.png' });
 
