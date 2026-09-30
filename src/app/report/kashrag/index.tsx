@@ -621,16 +621,6 @@ export default function KashragReportScreen() {
                   <Feather name="refresh-ccw" size={11} color={theme.colors.danger} />
                 </TouchableOpacity>
               )}
-              {isCompleted && (
-                <TouchableOpacity
-                  style={styles.miniReopenBtn}
-                  onPress={() => confirmReopenPlatoon(p)}
-                  activeOpacity={0.7}
-                >
-                  <Feather name="unlock" size={12} color="#D97706" />
-                  <Text style={styles.miniReopenText}>פתח</Text>
-                </TouchableOpacity>
-              )}
             </View>
           );
         })}
@@ -639,10 +629,6 @@ export default function KashragReportScreen() {
   };
 
   const renderSectionHeader = useCallback(({ section }: { section: { title: string; summary: string; isExpanded: boolean } }) => {
-    const isPlatoonGroup = groupBy === 'platoons';
-    const platoonData = isPlatoonGroup && activeSession?.platoons ? activeSession.platoons[section.title] : null;
-    const isCompleted = platoonData?.status === 'completed';
-
     return (
       <View style={styles.accordionHeaderContainer}>
         <TouchableOpacity 
@@ -651,36 +637,14 @@ export default function KashragReportScreen() {
           activeOpacity={0.7}
         >
           <View style={styles.accordionHeaderContent}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={styles.accordionTitle}>{section.title}</Text>
-              {isCompleted && (
-                <View style={styles.completedBadge}>
-                  <Text style={styles.completedBadgeText}>ננעל ע&quot;י קשפ&quot;ל</Text>
-                </View>
-              )}
-            </View>
+            <Text style={styles.accordionTitle}>{section.title}</Text>
             {section.summary ? <Text style={styles.accordionSummary}>{section.summary}</Text> : null}
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            {isCompleted && (
-              <TouchableOpacity
-                style={styles.reopenButton}
-                onPress={(e) => {
-                  e?.stopPropagation?.();
-                  confirmReopenPlatoon(section.title);
-                }}
-                activeOpacity={0.8}
-              >
-                <Feather name="unlock" size={13} color="#D97706" />
-                <Text style={styles.reopenButtonText}>פתח מחדש</Text>
-              </TouchableOpacity>
-            )}
-            <Text style={styles.accordionIcon}>{section.isExpanded ? '▲' : '▼'}</Text>
-          </View>
+          <Text style={styles.accordionIcon}>{section.isExpanded ? '▲' : '▼'}</Text>
         </TouchableOpacity>
       </View>
     );
-  }, [toggleSection, groupBy, activeSession, confirmReopenPlatoon]);
+  }, [toggleSection]);
 
   const renderDeviceItem = useCallback(({ item: device }: { item: Device }) => {
     const fault = device.faultStatus;
@@ -1549,51 +1513,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  miniReopenBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: '#FEF3C7',
-    borderWidth: 1,
-    borderColor: '#FDE68A',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  miniReopenText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#D97706',
-  },
-  completedBadge: {
-    backgroundColor: 'rgba(15, 76, 58, 0.1)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(15, 76, 58, 0.2)',
-  },
-  completedBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: theme.colors.primary,
-  },
-  reopenButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#FEF3C7',
-    borderWidth: 1,
-    borderColor: '#FDE68A',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  reopenButtonText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#D97706',
-  },
+
   miniResetBtn: {
     padding: 4,
     borderRadius: 6,
