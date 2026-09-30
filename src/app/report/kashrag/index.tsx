@@ -791,14 +791,6 @@ export default function KashragReportScreen() {
           <Feather name="copy" size={16} color={theme.colors.accent} />
           <Text style={styles.actionBtnText}>העתק דו&quot;ח</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.actionBtn, {backgroundColor: 'rgba(59, 130, 246, 0.1)'}]} onPress={() => setAuditTrailVisible(true)}>
-          <Feather name="activity" size={16} color={theme.colors.primary} />
-          <Text style={[styles.actionBtnText, {color: theme.colors.primary}]}>יומן אירועים</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.actionBtn, {backgroundColor: 'rgba(15, 76, 58, 0.1)'}]} onPress={() => setModalVisible(true)}>
-          <Feather name="plus" size={16} color={theme.colors.primary} />
-          <Text style={[styles.actionBtnText, {color: theme.colors.primary}]}>הוסף ציוד</Text>
-        </TouchableOpacity>
       </View>
 
       <View style={{ flex: 1 }}>
@@ -974,14 +966,14 @@ export default function KashragReportScreen() {
             <Text style={styles.floatingNavText}>קשפ&quot;ל</Text>
           </TouchableOpacity>
 
-          {/* 2. ציר זמן (Middle Right in RTL) */}
+          {/* 2. יומן אירועים (Middle Right in RTL) */}
           <TouchableOpacity 
             style={styles.floatingNavItem} 
             onPress={handleOpenTimeline}
             activeOpacity={0.7}
           >
             <MaterialCommunityIcons name="history" size={24} color="#475569" />
-            <Text style={styles.floatingNavText}>ציר זמן</Text>
+            <Text style={styles.floatingNavText}>יומן אירועים</Text>
           </TouchableOpacity>
 
           {/* 3. Center Space Placeholder (where the green + sits) */}
@@ -1020,9 +1012,10 @@ export default function KashragReportScreen() {
         >
           <TouchableOpacity
             testID="center-plus-toggle"
+            accessibilityLabel="הוסף ציוד"
             style={styles.centerFabRing}
-            onPress={toggleBar}
-            onLongPress={() => setModalVisible(true)}
+            onPress={() => setModalVisible(true)}
+            onLongPress={toggleBar}
             activeOpacity={0.85}
           >
             <View style={styles.centerFabInner}>

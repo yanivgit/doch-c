@@ -180,7 +180,7 @@ export default function DailySummaryModal({ visible, onClose, platoon, dohId }: 
 
           {/* Child 2 (LEFT): Close Button (X) + User Circle */}
           <View style={styles.headerTopLeft}>
-            <TouchableOpacity style={styles.iconBtnClose} onPress={onClose}>
+            <TouchableOpacity testID="close-daily-summary" style={styles.iconBtnClose} onPress={onClose}>
               <Feather name="x" size={22} color="#DC2626" />
             </TouchableOpacity>
             <TouchableOpacity style={styles.userCircleBtn}>

@@ -217,7 +217,7 @@ export default function AddDeviceModal({ visible, onClose, onAdded }: AddDeviceM
                   </View>
                 </View>
 
-                <TouchableOpacity style={styles.closeCardBtn} onPress={onClose}>
+                <TouchableOpacity testID="close-add-device" style={styles.closeCardBtn} onPress={onClose}>
                   <Feather name="x" size={18} color="#1E293B" />
                 </TouchableOpacity>
               </View>

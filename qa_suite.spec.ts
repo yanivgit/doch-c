@@ -148,35 +148,38 @@ test.describe('Continuous QA Suite: Doh Ts App', () => {
 
     await page.waitForURL('**/report/kashrag');
 
-    // 1. Verify floating bar items are visible initially
+    // 1. Verify top action buttons: ONLY "העתק דו\"ח" exists, no "הוסף ציוד" or "יומן אירועים"
+    console.log('Verifying clean top action bar...');
+    await expect(page.locator('text=העתק דו"ח')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=Command Center')).toBeVisible({ timeout: 5000 });
+
+    // 2. Verify floating bar items are visible initially
     console.log('Verifying initial floating bottom navigation bar items...');
     await expect(page.locator('text=קשפ"ל').last()).toBeVisible({ timeout: 10000 });
-    await expect(page.locator('text=ציר זמן').last()).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=יומן אירועים').last()).toBeVisible({ timeout: 10000 });
     await expect(page.locator('text=קשר"ג').last()).toBeVisible({ timeout: 10000 });
     await expect(page.locator('text=כניסה').last()).toBeVisible({ timeout: 10000 });
 
-    // 2. Click green + button to toggle / minimize bar
-    console.log('Toggling bar to minimize...');
+    // 3. Test clicking "יומן אירועים" opens DailySummaryModal
+    console.log('Testing "יומן אירועים" button opens Event Log modal...');
+    await page.locator('text=יומן אירועים').last().click();
+    await expect(page.locator('text=סנכרון מבצעי חי')).toBeVisible({ timeout: 5000 });
+    // Close DailySummaryModal via close button
+    await page.getByTestId('close-daily-summary').click();
+    await page.waitForTimeout(400);
+
+    // 4. Test clicking green + button opens AddDeviceModal
+    console.log('Testing central green + button opens Add Equipment modal...');
     const plusButton = page.getByTestId('center-plus-toggle');
     await expect(plusButton).toBeVisible();
     await plusButton.click();
+    await expect(page.locator('text=הוספת ציוד חדש')).toBeVisible({ timeout: 5000 });
 
-    // Give animation 400ms to slide down
+    // Close AddDeviceModal via close button
+    await page.getByTestId('close-add-device').click();
     await page.waitForTimeout(400);
 
-    // 3. Verify green + button remains visible while bar is minimized
-    await expect(plusButton).toBeVisible();
-
-    // 4. Click green + button again to expand
-    console.log('Toggling bar back to expand...');
-    await plusButton.click();
-    await page.waitForTimeout(400);
-
-    // 5. Verify bar items are back
-    await expect(page.locator('text=קשפ"ל').last()).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('text=ציר זמן').last()).toBeVisible({ timeout: 5000 });
-
-    console.log('SUCCESS: Floating navigation bar toggle fully verified!');
+    console.log('SUCCESS: Kashrag clean dashboard and floating navigation actions fully verified!');
     await browser.close();
   });
 });
