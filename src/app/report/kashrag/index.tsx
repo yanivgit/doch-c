@@ -772,13 +772,7 @@ export default function KashragReportScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <OfflineBanner />
       <View style={styles.topHeader}>
-        <TouchableOpacity style={styles.topHeaderIconOut} onPress={handleLogout}>
-          <Feather name="log-out" size={18} color={theme.colors.danger} />
-        </TouchableOpacity>
         <Text style={styles.topHeaderText}>דו&quot;ח ציוד טקטי • מחזור א׳</Text>
-        <TouchableOpacity style={styles.topHeaderIconIn}>
-          <Feather name="shield" size={18} color="#fff" />
-        </TouchableOpacity>
       </View>
 
       <View style={styles.header}>
@@ -817,14 +811,14 @@ export default function KashragReportScreen() {
                   {activeSession && activeSession.globalStatus !== 'pending' && activeSession.globalStatus !== 'archived' ? (
                     <View style={styles.activeSessionBoard}>
                       <View style={styles.boardHeader}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <View style={styles.boardTitleContainer}>
                           <View style={styles.pulsingIndicator} />
                           <Text style={styles.boardTitle}>דו&quot;ח יומי פעיל</Text>
                         </View>
                         {activeSession.globalStatus === 'active' ? (
-                          <View style={{flexDirection: 'row', gap: 12}}>
+                          <View style={styles.boardActions}>
                             <TouchableOpacity style={styles.resetSessionBtn} onPress={handleResetSession}>
-                              <Feather name="refresh-ccw" size={14} color={theme.colors.danger} />
+                              <Feather name="refresh-ccw" size={13} color={theme.colors.danger} />
                               <Text style={styles.resetSessionBtnText}>איפוס</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.endSessionBtn} onPress={handleEndSession}>
@@ -1045,32 +1039,17 @@ const styles = StyleSheet.create({
   topHeader: {
     flexDirection: 'row',
     width: '100%',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 10,
-    marginBottom: 20,
-  },
-  topHeaderIconOut: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  topHeaderIconIn: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: theme.colors.success,
-    alignItems: 'center',
-    justifyContent: 'center',
+    paddingTop: 12,
+    marginBottom: 16,
   },
   topHeaderText: {
-    fontSize: 12,
+    fontSize: 13,
     color: theme.colors.textMuted,
     fontWeight: '600',
+    textAlign: 'center',
   },
   header: {
     alignItems: 'center',
@@ -1164,10 +1143,12 @@ const styles = StyleSheet.create({
   },
   activeSessionBoard: {
     backgroundColor: '#FFFFFF',
-    padding: theme.spacing.xl,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
     borderRadius: 24,
     borderWidth: 1,
     borderColor: theme.colors.border,
+    overflow: 'hidden',
     shadowColor: theme.colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
@@ -1178,7 +1159,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 20,
+    width: '100%',
+  },
+  boardTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   pulsingIndicator: {
     width: 10,
@@ -1188,33 +1177,42 @@ const styles = StyleSheet.create({
     // Add pulsing animation in a real implementation
   },
   boardTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '800',
     color: theme.colors.text,
+  },
+  boardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   endSessionBtn: {
     backgroundColor: theme.colors.primary,
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 9,
     borderRadius: theme.borderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
     ...(theme.elevation?.sm as object || {}),
   },
   endSessionBtnText: {
     color: '#fff',
     fontWeight: 'bold',
+    fontSize: 14,
   },
   resetSessionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     backgroundColor: 'rgba(239, 68, 68, 0.05)',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
     borderRadius: theme.borderRadius.full,
   },
   resetSessionBtnText: {
     color: theme.colors.danger,
     fontWeight: '700',
+    fontSize: 14,
   },
   progressContainer: {
     gap: 16,
