@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, SectionList, TouchableOpacity, ActivityIndicator, Alert, TextInput, Platform, LayoutAnimation, Animated } from 'react-native';
+import { View, Text, StyleSheet, SectionList, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput, Platform, LayoutAnimation, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useApp } from '../../../context/AppContext';
@@ -31,6 +31,9 @@ export default function KashragReportScreen() {
   const [isFaultModalVisible, setIsFaultModalVisible] = useState(false);
   const [replacingDevice, setReplacingDevice] = useState<Device | null>(null);
   
+  // Dual-Tab state ('report' vs 'inventory')
+  const [activeTab, setActiveTab] = useState<'report' | 'inventory'>('report');
+
   // New features state
   const [searchQuery, setSearchQuery] = useState('');
   const [groupBy, setGroupBy] = useState<'platoons' | 'types'>('platoons');
@@ -73,10 +76,9 @@ export default function KashragReportScreen() {
     ]).start();
   }, [isBarExpanded, barTranslateY, barOpacity]);
 
-  const handleGoToKashpal = useCallback(() => {
-    login('Kashpal');
-    router.replace('/report/kashpal');
-  }, [login, router]);
+  const handleGoToDohTzade = useCallback(() => {
+    router.replace('/cycle-selection');
+  }, [router]);
 
   const handleOpenTimeline = useCallback(() => {
     setAuditTrailVisible(true);
@@ -751,15 +753,90 @@ export default function KashragReportScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Segmented Control (Tabs): דו"ח vs רשימת ציוד */}
+      <View style={styles.tabSwitcherContainer}>
+        <View style={styles.tabSwitcher}>
+          <TouchableOpacity 
+            style={[styles.tabButton, activeTab === 'report' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('report')}
+            activeOpacity={0.8}
+          >
+            <MaterialCommunityIcons 
+              name="clipboard-check-outline" 
+              size={17} 
+              color={activeTab === 'report' ? theme.colors.primary : '#64748B'} 
+              style={{ marginLeft: 6 }}
+            />
+            <Text style={[styles.tabText, activeTab === 'report' && styles.tabTextActive]}>
+              דו&quot;ח
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.tabButton, activeTab === 'inventory' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('inventory')}
+            activeOpacity={0.8}
+          >
+            <MaterialCommunityIcons 
+              name="format-list-bulleted" 
+              size={17} 
+              color={activeTab === 'inventory' ? theme.colors.primary : '#64748B'} 
+              style={{ marginLeft: 6 }}
+            />
+            <Text style={[styles.tabText, activeTab === 'inventory' && styles.tabTextActive]}>
+              רשימת ציוד
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
       <View style={{ flex: 1 }}>
         {loading ? (
           <View style={styles.center}>
             <ActivityIndicator size="large" color={theme.colors.primary} />
           </View>
+        ) : activeTab === 'report' ? (
+          <ScrollView 
+            style={styles.container}
+            contentContainerStyle={{ paddingBottom: 120, paddingTop: 4 }}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={[styles.statusBoardContainer, { paddingHorizontal: 0, paddingBottom: 16 }]}>
+              {activeSession && activeSession.globalStatus !== 'pending' && activeSession.globalStatus !== 'archived' ? (
+                <View style={styles.activeSessionBoard}>
+                  {renderStatusBars()}
+                  {activeSession.globalStatus !== 'active' && (
+                    <View style={{flexDirection: 'row', gap: 12, marginTop: 24}}>
+                      <TouchableOpacity style={styles.startSessionBtn} onPress={handleStartSession}>
+                        <Feather name="play" size={16} color="#FFF" />
+                        <Text style={styles.startSessionBtnText}>הפעל דו&quot;ח לכל הפלוגות</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.historyLogsBtn} onPress={() => setHistoryModalVisible(true)}>
+                        <Feather name="clock" size={16} color={theme.colors.primary} />
+                        <Text style={styles.historyLogsBtnText}>היסטוריה</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              ) : (
+                <View style={styles.noSessionBoard}>
+                  <Text style={styles.noSessionText}>אין דו&quot;ח יומי פעיל</Text>
+                  <View style={{flexDirection: 'row', gap: 10, marginTop: 10}}>
+                    <TouchableOpacity style={styles.startSessionBtn} onPress={handleStartSession}>
+                      <Text style={styles.startSessionBtnText}>פתח דו&quot;ח יומי</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.historyLogsBtn} onPress={() => setHistoryModalVisible(true)}>
+                      <Text style={styles.historyLogsBtnText}>היסטוריית דוחות</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </View>
+          </ScrollView>
         ) : (
           <SectionList
             style={styles.container}
-            contentContainerStyle={{ paddingBottom: 100 }}
+            contentContainerStyle={{ paddingBottom: 120 }}
             keyboardShouldPersistTaps="handled"
             sections={sections}
             keyExtractor={(item) => item.id || item.tsadiNumber}
@@ -770,65 +847,31 @@ export default function KashragReportScreen() {
             maxToRenderPerBatch={10}
             windowSize={5}
             ListHeaderComponent={
-              <View style={{ marginBottom: 16 }}>
-                <View style={[styles.statusBoardContainer, { paddingHorizontal: 0, paddingBottom: 16 }]}>
-                  {activeSession && activeSession.globalStatus !== 'pending' && activeSession.globalStatus !== 'archived' ? (
-                    <View style={styles.activeSessionBoard}>
-                      {renderStatusBars()}
-                      {activeSession.globalStatus !== 'active' && (
-                        <View style={{flexDirection: 'row', gap: 12, marginTop: 24}}>
-                          <TouchableOpacity style={styles.startSessionBtn} onPress={handleStartSession}>
-                            <Feather name="play" size={16} color="#FFF" />
-                            <Text style={styles.startSessionBtnText}>הפעל דו&quot;ח לכל הפלוגות</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity style={styles.historyLogsBtn} onPress={() => setHistoryModalVisible(true)}>
-                            <Feather name="clock" size={16} color={theme.colors.primary} />
-                            <Text style={styles.historyLogsBtnText}>היסטוריה</Text>
-                          </TouchableOpacity>
-                        </View>
-                      )}
-                    </View>
-                  ) : (
-                    <View style={styles.noSessionBoard}>
-                      <Text style={styles.noSessionText}>אין דו&quot;ח יומי פעיל</Text>
-                      <View style={{flexDirection: 'row', gap: 10, marginTop: 10}}>
-                        <TouchableOpacity style={styles.startSessionBtn} onPress={handleStartSession}>
-                          <Text style={styles.startSessionBtnText}>פתח דו&quot;ח יומי</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.historyLogsBtn} onPress={() => setHistoryModalVisible(true)}>
-                          <Text style={styles.historyLogsBtnText}>היסטוריית דוחות</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  )}
+              <View style={[styles.controlsContainer, { paddingHorizontal: 0, borderBottomWidth: 0, padding: 0, marginVertical: 8 }]}>
+                <View style={styles.searchContainer}>
+                  <Feather name="search" size={20} color={theme.colors.textMuted} style={styles.searchIcon} />
+                  <TextInput 
+                    style={styles.searchInput}
+                    placeholder="חיפוש לפי צ' או סוג..."
+                    placeholderTextColor={theme.colors.textMuted}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                  />
                 </View>
-
-                <View style={[styles.controlsContainer, { paddingHorizontal: 0, borderBottomWidth: 0, padding: 0, marginTop: 8 }]}>
-                  <View style={styles.searchContainer}>
-                    <Feather name="search" size={20} color={theme.colors.textMuted} style={styles.searchIcon} />
-                    <TextInput 
-                      style={styles.searchInput}
-                      placeholder="חיפוש לפי צ' או סוג..."
-                      placeholderTextColor={theme.colors.textMuted}
-                      value={searchQuery}
-                      onChangeText={setSearchQuery}
-                    />
-                  </View>
-                  
-                  <View style={styles.toggleContainer}>
-                    <TouchableOpacity 
-                      style={[styles.toggleButton, groupBy === 'types' && styles.toggleButtonActive]}
-                      onPress={() => setGroupBy('types')}
-                    >
-                      <Text style={[styles.toggleText, groupBy === 'types' && styles.toggleTextActive]}>לפי סוג מכשיר</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={[styles.toggleButton, groupBy === 'platoons' && styles.toggleButtonActive]}
-                      onPress={() => setGroupBy('platoons')}
-                    >
-                      <Text style={[styles.toggleText, groupBy === 'platoons' && styles.toggleTextActive]}>לפי פלוגות</Text>
-                    </TouchableOpacity>
-                  </View>
+                
+                <View style={styles.toggleContainer}>
+                  <TouchableOpacity 
+                    style={[styles.toggleButton, groupBy === 'types' && styles.toggleButtonActive]}
+                    onPress={() => setGroupBy('types')}
+                  >
+                    <Text style={[styles.toggleText, groupBy === 'types' && styles.toggleTextActive]}>לפי סוג מכשיר</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.toggleButton, groupBy === 'platoons' && styles.toggleButtonActive]}
+                    onPress={() => setGroupBy('platoons')}
+                  >
+                    <Text style={[styles.toggleText, groupBy === 'platoons' && styles.toggleTextActive]}>לפי פלוגות</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             }
@@ -897,14 +940,14 @@ export default function KashragReportScreen() {
           ]}
           pointerEvents={isBarExpanded ? 'auto' : 'none'}
         >
-          {/* 1. קשפ"ל (Rightmost in RTL) */}
+          {/* 1. דו"ח צ' (Rightmost in RTL) */}
           <TouchableOpacity 
             style={styles.floatingNavItem} 
-            onPress={handleGoToKashpal}
+            onPress={handleGoToDohTzade}
             activeOpacity={0.7}
           >
             <MaterialCommunityIcons name="archive-outline" size={24} color="#475569" />
-            <Text style={styles.floatingNavText}>קשפ&quot;ל</Text>
+            <Text style={styles.floatingNavText}>דו&quot;ח צ&apos;</Text>
           </TouchableOpacity>
 
           {/* 2. יומן אירועים (Middle Right in RTL) */}
@@ -1032,6 +1075,41 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: theme.colors.accent,
+  },
+  tabSwitcherContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  tabSwitcher: {
+    flexDirection: 'row',
+    backgroundColor: '#EEF2F6',
+    borderRadius: 12,
+    padding: 3,
+  },
+  tabButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 9,
+  },
+  tabButtonActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  tabText: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '700',
+  },
+  tabTextActive: {
+    color: '#0F172A',
+    fontWeight: '800',
   },
   statusBoardContainer: {
     paddingHorizontal: 20,

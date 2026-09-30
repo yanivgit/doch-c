@@ -107,6 +107,7 @@ test.describe('Continuous QA Suite: Doh Ts App', () => {
       await pageB.click('text=שמור');
 
       console.log('Kashrag verifying sync without refresh...');
+      await pageA.click('text=רשימת ציוד');
       const accordion = pageA.locator('text=פלוגה א׳').first();
       if (await accordion.isVisible()) {
         await accordion.click();
@@ -154,11 +155,19 @@ test.describe('Continuous QA Suite: Doh Ts App', () => {
     await expect(page.locator('text=העתק דו"ח')).toBeVisible({ timeout: 10000 });
     await expect(page.locator('text=Command Center')).toBeVisible({ timeout: 5000 });
 
+    // 1.5 Verify Dual-Tab segmented control works smoothly
+    console.log('Testing dual-tab segmented control (דו"ח vs רשימת ציוד)...');
+    await expect(page.locator('text=דו"ח').first()).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('text=רשימת ציוד')).toBeVisible({ timeout: 5000 });
+    await page.click('text=רשימת ציוד');
+    await expect(page.locator('input[placeholder="חיפוש לפי צ\' או סוג..."]')).toBeVisible({ timeout: 5000 });
+    await page.locator('text=דו"ח').first().click();
+
     await page.screenshot({ path: 'C:/Users/gitma/.gemini/antigravity/brain/349dd5a7-2cae-4628-8789-c9e7db38626a/scratch/kashrag_verified.png' });
 
     // 2. Verify floating bar items are visible initially
     console.log('Verifying initial floating bottom navigation bar items...');
-    await expect(page.locator('text=קשפ"ל').last()).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=דו"ח צ\'').last()).toBeVisible({ timeout: 10000 });
     await expect(page.locator('text=יומן אירועים').last()).toBeVisible({ timeout: 10000 });
     await expect(page.locator('text=קשר"ג').last()).toBeVisible({ timeout: 10000 });
     await expect(page.locator('text=כניסה').last()).toBeVisible({ timeout: 10000 });
@@ -182,7 +191,13 @@ test.describe('Continuous QA Suite: Doh Ts App', () => {
     await page.getByTestId('close-add-device').click();
     await page.waitForTimeout(400);
 
-    console.log('SUCCESS: Kashrag clean dashboard and floating navigation actions fully verified!');
+    // 5. Test clicking "דו"ח צ'" button navigates to /cycle-selection
+    console.log('Testing "דו"ח צ\'" button navigates to /cycle-selection...');
+    await page.locator('text=דו"ח צ\'').last().click();
+    await page.waitForURL('**/cycle-selection');
+    await expect(page.locator('text=בחירת דו"ח צ')).toBeVisible({ timeout: 5000 });
+
+    console.log('SUCCESS: Kashrag clean dashboard, dual-tab layout and floating navigation actions fully verified!');
     await browser.close();
   });
 });
