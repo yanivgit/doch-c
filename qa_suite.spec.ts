@@ -167,7 +167,7 @@ test.describe('Continuous QA Suite: Doh Ts App', () => {
 
     // 2. Verify floating bar items are visible initially
     console.log('Verifying initial floating bottom navigation bar items...');
-    await expect(page.locator('text=דו"ח צ\'').last()).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=היסטוריה').last()).toBeVisible({ timeout: 10000 });
     await expect(page.locator('text=יומן אירועים').last()).toBeVisible({ timeout: 10000 });
     await expect(page.locator('text=קשר"ג').last()).toBeVisible({ timeout: 10000 });
     await expect(page.locator('text=כניסה').last()).toBeVisible({ timeout: 10000 });
@@ -191,11 +191,12 @@ test.describe('Continuous QA Suite: Doh Ts App', () => {
     await page.getByTestId('close-add-device').click();
     await page.waitForTimeout(400);
 
-    // 5. Test clicking "דו"ח צ'" button navigates to /cycle-selection
-    console.log('Testing "דו"ח צ\'" button navigates to /cycle-selection...');
-    await page.locator('text=דו"ח צ\'').last().click();
-    await page.waitForURL('**/cycle-selection');
-    await expect(page.locator('text=בחירת דו"ח צ')).toBeVisible({ timeout: 5000 });
+    // 5. Test clicking "היסטוריה" button opens VerificationHistoryModal
+    console.log('Testing "היסטוריה" button in floating nav opens Verification History modal...');
+    const historyBottomBtn = page.locator('text=היסטוריה').last();
+    await expect(historyBottomBtn).toBeVisible({ timeout: 5000 });
+    await historyBottomBtn.click();
+    await expect(page.locator('text=היסטוריית דוחות').first()).toBeVisible({ timeout: 5000 });
 
     console.log('SUCCESS: Kashrag clean dashboard, dual-tab layout and floating navigation actions fully verified!');
     await browser.close();

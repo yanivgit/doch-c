@@ -994,14 +994,14 @@ export default function KashragReportScreen() {
           ]}
           pointerEvents={isBarExpanded ? 'auto' : 'none'}
         >
-          {/* 1. דו"ח צ' (Rightmost in RTL) */}
+          {/* 1. היסטוריה (Rightmost in RTL) */}
           <TouchableOpacity 
             style={styles.floatingNavItem} 
-            onPress={handleGoToDohTzade}
+            onPress={() => setHistoryModalVisible(true)}
             activeOpacity={0.7}
           >
-            <MaterialCommunityIcons name="archive-outline" size={24} color="#475569" />
-            <Text style={styles.floatingNavText}>דו&quot;ח צ&apos;</Text>
+            <Feather name="archive" size={24} color="#475569" />
+            <Text style={styles.floatingNavText}>היסטוריה</Text>
           </TouchableOpacity>
 
           {/* 2. יומן אירועים (Middle Right in RTL) */}
