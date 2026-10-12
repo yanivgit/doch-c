@@ -994,14 +994,14 @@ export default function KashragReportScreen() {
           ]}
           pointerEvents={isBarExpanded ? 'auto' : 'none'}
         >
-          {/* 1. היסטוריה (Rightmost in RTL) */}
+          {/* 1. היסטוריה דו"ח צ' (Rightmost in RTL) */}
           <TouchableOpacity 
             style={styles.floatingNavItem} 
             onPress={() => setHistoryModalVisible(true)}
             activeOpacity={0.7}
           >
-            <Feather name="archive" size={24} color="#475569" />
-            <Text style={styles.floatingNavText}>היסטוריה</Text>
+            <Feather name="archive" size={22} color="#475569" />
+            <Text style={styles.floatingNavText}>היסטוריה{'\n'}דו&quot;ח צ&apos;</Text>
           </TouchableOpacity>
 
           {/* 2. יומן אירועים (Middle Right in RTL) */}
@@ -1638,10 +1638,12 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   floatingNavText: {
-    fontSize: 11,
+    fontSize: 10.5,
+    lineHeight: 12.5,
     fontWeight: '500',
     color: '#64748B',
-    marginTop: 3,
+    marginTop: 2,
+    textAlign: 'center',
   },
   floatingNavTextActive: {
     color: '#0F4C3A',
