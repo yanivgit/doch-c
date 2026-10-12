@@ -165,11 +165,7 @@ export default function KashragReportScreen() {
             if (!isArchivingRef.current) {
               isArchivingRef.current = true;
               try {
-                const currentDevices = await getAllDevices(selectedDohId);
-                await archiveSession(sessionData, currentDevices, {
-                  autoArchivedIncomplete: true,
-                  completionNotes: 'אורכב אוטומטית בחצות - הדו"ח לא הושלם במלואו'
-                });
+                await archiveExpiredSessions(selectedDohId);
               } finally {
                 isArchivingRef.current = false;
               }

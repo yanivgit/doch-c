@@ -76,34 +76,42 @@ export default function VerificationHistoryModal({ visible, onClose, dohId }: Pr
               style={styles.list}
               data={logs}
               keyExtractor={(log) => log.id || log.date}
-              renderItem={({ item: log }) => (
-                <View style={[styles.logCard, log.status === 'לא הושלם' && styles.logCardIncomplete]}>
-                  <View style={styles.logHeader}>
-                    <View style={{ flex: 1, marginRight: 8 }}>
-                      <View style={styles.dateRow}>
-                        <Text style={styles.logDate}>{log.date}</Text>
-                        {log.autoArchivedIncomplete && (
-                          <View style={styles.autoArchivedBadge}>
-                            <Text style={styles.autoArchivedBadgeText}>⚠️ לא הושלם (חצות)</Text>
-                          </View>
-                        )}
+              renderItem={({ item: log }) => {
+                const isActuallyComplete = 
+                  log.status === 'בוצע' || 
+                  Boolean(log.overallProgress && log.overallProgress.includes('(100%)')) ||
+                  (Boolean(log.platoonBreakdown) && 
+                   Object.keys(log.platoonBreakdown).length > 0 && 
+                   Object.values(log.platoonBreakdown).every(p => p.includes('(100%)')));
+
+                return (
+                  <View style={[styles.logCard, !isActuallyComplete && styles.logCardIncomplete]}>
+                    <View style={styles.logHeader}>
+                      <View style={{ flex: 1, marginRight: 8 }}>
+                        <View style={styles.dateRow}>
+                          <Text style={styles.logDate}>{log.date}</Text>
+                          {log.autoArchivedIncomplete && !isActuallyComplete && (
+                            <View style={styles.autoArchivedBadge}>
+                              <Text style={styles.autoArchivedBadgeText}>⚠️ לא הושלם (חצות)</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.logProgressText}>הושלם: {log.overallProgress}</Text>
+                        {log.completionNotes && (!isActuallyComplete || !log.completionNotes.includes('לא הושלם')) ? (
+                          <Text style={styles.completionNotesText}>{log.completionNotes}</Text>
+                        ) : null}
                       </View>
-                      <Text style={styles.logProgressText}>הושלם: {log.overallProgress}</Text>
-                      {log.completionNotes && (
-                        <Text style={styles.completionNotesText}>{log.completionNotes}</Text>
-                      )}
-                    </View>
-                    <View style={{flexDirection: 'row', alignItems: 'center', gap: 10}}>
-                      <View style={[styles.statusBadge, log.status === 'בוצע' ? styles.statusSuccess : styles.statusDanger]}>
-                        <Text style={styles.statusText}>{log.status}</Text>
+                      <View style={{flexDirection: 'row', alignItems: 'center', gap: 10}}>
+                        <View style={[styles.statusBadge, isActuallyComplete ? styles.statusSuccess : styles.statusDanger]}>
+                          <Text style={styles.statusText}>{isActuallyComplete ? 'בוצע' : 'לא הושלם'}</Text>
+                        </View>
+                        <TouchableOpacity onPress={() => log.id && handleDeleteLog(log.id)} style={styles.deleteLogBtn}>
+                          <Text style={styles.deleteLogBtnText}>🗑️</Text>
+                        </TouchableOpacity>
                       </View>
-                      <TouchableOpacity onPress={() => log.id && handleDeleteLog(log.id)} style={styles.deleteLogBtn}>
-                        <Text style={styles.deleteLogBtnText}>🗑️</Text>
-                      </TouchableOpacity>
                     </View>
-                  </View>
-                  
-                  {log.status === 'לא הושלם' && log.missingDevices && log.missingDevices.length > 0 ? (
+                    
+                    {!isActuallyComplete && log.missingDevices && log.missingDevices.length > 0 ? (
                     <View style={styles.missingSection}>
                       <Accordion title="⚠️ ציוד חסר (לא נבדק)" summary={`${log.missingDevices.length} פריטים`}>
                         <View style={styles.missingList}>
@@ -148,7 +156,8 @@ export default function VerificationHistoryModal({ visible, onClose, dohId }: Pr
                     </View>
                   </Accordion>
                 </View>
-              )}
+              );
+            }}
             />
           )}
         </View>

@@ -916,10 +916,32 @@ export const archiveExpiredSessions = async (dohId: string): Promise<number> => 
     const allDevices = await getAllDevices(dohId);
 
     for (const session of expiredSessions) {
-      await archiveSession(session, allDevices, {
-        autoArchivedIncomplete: true,
-        completionNotes: 'אורכב אוטומטית בחצות - הדו"ח לא הושלם במלואו'
+      if (!session.id) continue;
+
+      const verifiedMap = session.verifiedDevices && Object.keys(session.verifiedDevices).length > 0
+        ? session.verifiedDevices
+        : await getVerifiedDevices(session.id);
+
+      let verifiedCount = 0;
+      allDevices.forEach((d) => {
+        if (d.id && verifiedMap[d.id]) {
+          verifiedCount++;
+        }
       });
+
+      const totalExpected = allDevices.length;
+      const isFullyVerified = totalExpected > 0 && verifiedCount === totalExpected;
+
+      if (isFullyVerified) {
+        // 100% complete across all devices: archive gracefully as a successful report
+        await archiveSession(session, allDevices);
+      } else {
+        // Incomplete report: archive with midnight warning
+        await archiveSession(session, allDevices, {
+          autoArchivedIncomplete: true,
+          completionNotes: 'אורכב אוטומטית בחצות - הדו"ח לא הושלם במלואו'
+        });
+      }
     }
 
     return expiredSessions.length;
@@ -937,11 +959,34 @@ export const getHistoryLogs = async (dohId: string): Promise<VerificationHistory
     );
     const querySnapshot = await getDocs(q);
     const logs: VerificationHistory[] = [];
-    querySnapshot.forEach((doc) => {
-      logs.push({ id: doc.id, ...doc.data() } as VerificationHistory);
+    querySnapshot.forEach((docSnap) => {
+      const data = { id: docSnap.id, ...docSnap.data() } as VerificationHistory;
+
+      // Auto-heal 100% completed records that were erroneously saved as incomplete
+      const is100Percent = 
+        Boolean(data.overallProgress && data.overallProgress.includes('(100%)')) ||
+        (Boolean(data.platoonBreakdown) && 
+         Object.keys(data.platoonBreakdown).length > 0 && 
+         Object.values(data.platoonBreakdown).every(p => p.includes('(100%)')));
+
+      if (is100Percent && (data.status !== 'בוצע' || data.autoArchivedIncomplete)) {
+        data.status = 'בוצע';
+        data.autoArchivedIncomplete = false;
+        if (data.completionNotes && data.completionNotes.includes('לא הושלם')) {
+          delete data.completionNotes;
+        }
+        // Permanently heal the record in Firestore in the background
+        updateDoc(doc(db, 'verificationHistory', docSnap.id), {
+          status: 'בוצע',
+          autoArchivedIncomplete: deleteField(),
+          completionNotes: deleteField()
+        }).catch((err) => console.warn('Background history healing failed:', err));
+      }
+
+      logs.push(data);
     });
     // Sort locally to avoid composite index requirement
-    return logs.sort((a, b) => b.archivedAt.seconds - a.archivedAt.seconds);
+    return logs.sort((a, b) => (b.archivedAt?.seconds || 0) - (a.archivedAt?.seconds || 0));
   } catch (error) {
     console.error("Error getting history logs: ", error);
     return [];
