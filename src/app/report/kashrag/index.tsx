@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, SectionList, ScrollView, TouchableOpacity, Acti
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useApp } from '../../../context/AppContext';
-import { getAllDevices, subscribeToAllDevices, Device, deleteDevice, VerificationSession, archiveSession, archiveExpiredSessions, resetSession, getDailyDocId, startGlobalSession, subscribeToVerifiedDevices, reopenKashpalSession, resetPlatoonSession } from '../../../firebase/api';
+import { getAllDevices, subscribeToAllDevices, Device, deleteDevice, VerificationSession, archiveSession, archiveExpiredSessions, resetSession, getDailyDocId, startGlobalSession, subscribeToVerifiedDevices, reopenKashpalSession, resetPlatoonSession, markDeviceAsFixed } from '../../../firebase/api';
 import { db } from '../../../firebase/config';
 import { onSnapshot, doc } from 'firebase/firestore';
 import * as Clipboard from 'expo-clipboard';
@@ -98,6 +98,40 @@ export default function KashragReportScreen() {
       console.error("Error fetching devices manually in Kashrag:", error);
     }
   }, [selectedDohId]);
+
+  const handleMarkFixed = useCallback(async (device: Device) => {
+    if (!device.id) return;
+    try {
+      await markDeviceAsFixed(device.id, 'קשר"ג');
+      if (Platform.OS === 'web') {
+        window.alert(`המכשיר צ' ${device.tsadiNumber} סומן כתוקן וחזר לכשירות.`);
+      } else {
+        Alert.alert('עודכן בהצלחה', `המכשיר צ' ${device.tsadiNumber} סומן כתוקן וחזר לכשירות.`);
+      }
+      fetchDevices();
+    } catch (error) {
+      console.error('Error marking device as fixed:', error);
+      Alert.alert('שגיאה', 'לא ניתן לעדכן את סטטוס המכשיר');
+    }
+  }, [fetchDevices]);
+
+  const confirmMarkFixed = useCallback((device: Device) => {
+    const message = `האם לסמן את המכשיר (${device.type}) צ' ${device.tsadiNumber} כתוקן ולהחזירו לכשירות?`;
+    if (Platform.OS === 'web') {
+      if (window.confirm(message)) {
+        handleMarkFixed(device);
+      }
+      return;
+    }
+    Alert.alert(
+      'סימון מכשיר כתוקן',
+      message,
+      [
+        { text: 'ביטול', style: 'cancel' },
+        { text: 'סמן כתוקן', onPress: () => handleMarkFixed(device) }
+      ]
+    );
+  }, [handleMarkFixed]);
 
   const handleKashragPress = useCallback(() => {
     fetchDevices();
@@ -655,18 +689,32 @@ export default function KashragReportScreen() {
         ]}
       >
         <View style={styles.actionButtons}>
+          {fault === 'replacement' && (
+            <TouchableOpacity 
+              style={[styles.iconButton, styles.iconButtonReplacement]} 
+              onPress={() => setReplacingDevice(device)}
+              accessibilityLabel="החלפה מול חטיבה"
+            >
+              <Feather name="refresh-cw" size={16} color="#DC2626" />
+            </TouchableOpacity>
+          )}
+          {fault && (
+            <TouchableOpacity 
+              style={[styles.iconButton, styles.iconButtonFixed]} 
+              onPress={() => confirmMarkFixed(device)}
+              accessibilityLabel="סמן כתוקן"
+            >
+              <Feather name="check" size={17} color="#15803D" />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity 
             style={[
               styles.iconButton, 
               fault && (fault === 'replacement' ? styles.iconButtonFaultRed : styles.iconButtonFaultOrange)
             ]} 
             onPress={() => {
-              if (fault === 'replacement') {
-                setReplacingDevice(device);
-              } else {
-                setFaultModalDevice(device);
-                setIsFaultModalVisible(true);
-              }
+              setFaultModalDevice(device);
+              setIsFaultModalVisible(true);
             }}
           >
             <Feather 
@@ -695,25 +743,35 @@ export default function KashragReportScreen() {
           </TouchableOpacity>
         </View>
         <View style={styles.deviceInfo}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <Text style={styles.deviceType}>{device.type}</Text>
-            {fault === 'inspection' && (
-              <View style={styles.faultBadgeInspection}>
-                <Feather name="alert-circle" size={10} color="#B45309" />
-                <Text style={styles.faultBadgeTextInspection}>דרושה בדיקת קשר</Text>
-              </View>
-            )}
-            {fault === 'replacement' && (
+          <Text style={styles.deviceType}>{device.type}</Text>
+          {fault ? (
+            <View style={styles.faultBadgesRow}>
+              {fault === 'inspection' && (
+                <View style={styles.faultBadgeInspection}>
+                  <Feather name="alert-circle" size={10} color="#B45309" />
+                  <Text style={styles.faultBadgeTextInspection}>דרושה בדיקת קשר</Text>
+                </View>
+              )}
+              {fault === 'replacement' && (
+                <TouchableOpacity 
+                  style={styles.faultBadgeReplacement}
+                  onPress={() => setReplacingDevice(device)}
+                  activeOpacity={0.7}
+                >
+                  <Feather name="alert-octagon" size={10} color="#B91C1C" />
+                  <Text style={styles.faultBadgeTextReplacement}>דורש החלפה</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity 
-                style={styles.faultBadgeReplacement}
-                onPress={() => setReplacingDevice(device)}
+                style={styles.markFixedBadge} 
+                onPress={() => confirmMarkFixed(device)}
                 activeOpacity={0.7}
               >
-                <Feather name="alert-octagon" size={10} color="#B91C1C" />
-                <Text style={styles.faultBadgeTextReplacement}>דורש החלפה</Text>
+                <Feather name="check" size={10} color="#15803D" />
+                <Text style={styles.markFixedBadgeText}>סמן כתוקן</Text>
               </TouchableOpacity>
-            )}
-          </View>
+            </View>
+          ) : null}
           <Text style={styles.deviceTsadi}>צ&apos;: <Text style={styles.tsadiHighlight}>{device.tsadiNumber}</Text></Text>
           {groupBy === 'types' ? (
             <View style={styles.tagContainer}>
@@ -728,7 +786,7 @@ export default function KashragReportScreen() {
         </View>
       </View>
     );
-  }, [groupBy]);
+  }, [groupBy, confirmMarkFixed]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }}>
@@ -1435,15 +1493,24 @@ const styles = StyleSheet.create({
   },
   actionButtons: {
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+    gap: 6,
   },
   iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: 'rgba(15, 76, 58, 0.08)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  faultBadgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 6,
+    marginBottom: 4,
+    flexWrap: 'wrap',
   },
   iconButtonDanger: {
     backgroundColor: 'rgba(239, 68, 68, 0.1)',
@@ -1453,6 +1520,32 @@ const styles = StyleSheet.create({
   },
   iconButtonFaultRed: {
     backgroundColor: '#FEE2E2',
+  },
+  iconButtonFixed: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+  },
+  iconButtonReplacement: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+  },
+  markFixedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+  },
+  markFixedBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#15803D',
   },
   deviceRowInspection: {
     borderColor: '#F59E0B',

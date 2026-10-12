@@ -1225,7 +1225,7 @@ export const updateDeviceFaultStatus = async (
         tsadiNumber: data.tsadiNumber,
         action: 'UPDATE',
         user,
-        details: `תקלה בוטלה / הוסרה למכשיר (${data.type}) צ' ${data.tsadiNumber}`,
+        details: `המכשיר תוקן וחזר לכשירות (${data.type}) צ' ${data.tsadiNumber}`,
         platoon: data.assignment,
         involvedPlatoons: data.assignment ? [data.assignment] : [],
         dohId: data.dohId
@@ -1233,6 +1233,42 @@ export const updateDeviceFaultStatus = async (
     }
   } catch (error) {
     console.error("Error updating fault status: ", error);
+    throw error;
+  }
+};
+
+export const markDeviceAsFixed = async (
+  deviceId: string,
+  user: string
+) => {
+  try {
+    const deviceRef = doc(db, 'devices', deviceId);
+    const snap = await getDoc(deviceRef);
+    if (!snap.exists()) {
+      throw new Error('DEVICE_NOT_FOUND');
+    }
+    const data = snap.data() as Device;
+
+    await updateDoc(deviceRef, {
+      faultStatus: deleteField(),
+      faultReportedAt: deleteField(),
+      faultReportedBy: deleteField(),
+      faultNotes: deleteField(),
+      lastChecked: Timestamp.now()
+    });
+
+    await logEvent({
+      deviceId,
+      tsadiNumber: data.tsadiNumber,
+      action: 'UPDATE',
+      user,
+      details: `המכשיר תוקן וחזר לכשירות (${data.type}) צ' ${data.tsadiNumber}`,
+      platoon: data.assignment,
+      involvedPlatoons: data.assignment ? [data.assignment] : [],
+      dohId: data.dohId
+    });
+  } catch (error) {
+    console.error("Error marking device as fixed: ", error);
     throw error;
   }
 };

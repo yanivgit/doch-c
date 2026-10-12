@@ -26,7 +26,8 @@ import {
   getDailyDocId, 
   getDevicesByPlatoonAndDohId,
   subscribeToDevicesByPlatoonAndDohId,
-  subscribeToVerifiedDevices 
+  subscribeToVerifiedDevices,
+  markDeviceAsFixed
 } from '../../../firebase/api';
 import { db } from '../../../firebase/config';
 import { onSnapshot, doc, collection, query, where } from 'firebase/firestore';
@@ -35,7 +36,6 @@ import EditLocationModal from '../../../components/EditLocationModal';
 import TransferDeviceModal from '../../../components/TransferDeviceModal';
 import DailySummaryModal from '../../../components/DailySummaryModal';
 import ReportFaultModal from '../../../components/ReportFaultModal';
-import ReplaceDeviceModal from '../../../components/ReplaceDeviceModal';
 import Snackbar from '../../../components/Snackbar';
 import OfflineBanner from '../../../components/OfflineBanner';
 import { PLUGOT } from '../../../constants/data';
@@ -57,7 +57,6 @@ export default function KashpalReportScreen() {
   const [isTimelineVisible, setIsTimelineVisible] = useState(false);
   const [faultModalDevice, setFaultModalDevice] = useState<Device | null>(null);
   const [isFaultModalVisible, setIsFaultModalVisible] = useState(false);
-  const [replacingDevice, setReplacingDevice] = useState<Device | null>(null);
   
   // Tactical Mode & Filter states
   // Mode A: 'report' ("דו"ח פעיל") - Verification UI or Completed Success State
@@ -79,6 +78,41 @@ export default function KashpalReportScreen() {
       console.error("Error fetching devices manually:", error);
     }
   }, [selectedPlatoon, selectedDohId]);
+
+  const handleMarkFixed = useCallback(async (device: Device) => {
+    if (!device.id) return;
+    try {
+      const currentUser = selectedPlatoon ? `קשפ"ל_${selectedPlatoon}` : 'קשפ"ל';
+      await markDeviceAsFixed(device.id, currentUser);
+      if (Platform.OS === 'web') {
+        window.alert(`המכשיר צ' ${device.tsadiNumber} סומן כתוקן וחזר לכשירות.`);
+      } else {
+        Alert.alert('עודכן בהצלחה', `המכשיר צ' ${device.tsadiNumber} סומן כתוקן וחזר לכשירות.`);
+      }
+      fetchDevices();
+    } catch (error) {
+      console.error('Error marking device as fixed:', error);
+      Alert.alert('שגיאה', 'לא ניתן לעדכן את סטטוס המכשיר');
+    }
+  }, [selectedPlatoon, fetchDevices]);
+
+  const confirmMarkFixed = useCallback((device: Device) => {
+    const message = `האם לסמן את המכשיר (${device.type}) צ' ${device.tsadiNumber} כתוקן ולהחזירו לכשירות?`;
+    if (Platform.OS === 'web') {
+      if (window.confirm(message)) {
+        handleMarkFixed(device);
+      }
+      return;
+    }
+    Alert.alert(
+      'סימון מכשיר כתוקן',
+      message,
+      [
+        { text: 'ביטול', style: 'cancel' },
+        { text: 'סמן כתוקן', onPress: () => handleMarkFixed(device) }
+      ]
+    );
+  }, [handleMarkFixed]);
 
   // Real-time synchronization for platoon devices
   useEffect(() => {
@@ -882,13 +916,19 @@ export default function KashpalReportScreen() {
                             </View>
                           )}
                           {fault === 'replacement' && (
-                            <TouchableOpacity 
-                              style={styles.faultBadgeReplacement}
-                              onPress={() => setReplacingDevice(device)}
-                              activeOpacity={0.7}
-                            >
+                            <View style={styles.faultBadgeReplacement}>
                               <Feather name="alert-octagon" size={11} color="#B91C1C" />
                               <Text style={styles.faultBadgeTextReplacement}>דורש החלפה</Text>
+                            </View>
+                          )}
+                          {fault && (
+                            <TouchableOpacity 
+                              style={styles.markFixedBadge}
+                              onPress={() => confirmMarkFixed(device)}
+                              activeOpacity={0.7}
+                            >
+                              <Feather name="check" size={11} color="#15803D" />
+                              <Text style={styles.markFixedBadgeText}>סמן כתוקן</Text>
                             </TouchableOpacity>
                           )}
                         </View>
@@ -996,13 +1036,19 @@ export default function KashpalReportScreen() {
                           </View>
                         )}
                         {fault === 'replacement' && (
-                          <TouchableOpacity 
-                            style={styles.faultBadgeReplacement}
-                            onPress={() => setReplacingDevice(device)}
-                            activeOpacity={0.7}
-                          >
+                          <View style={styles.faultBadgeReplacement}>
                             <Feather name="alert-octagon" size={11} color="#B91C1C" />
                             <Text style={styles.faultBadgeTextReplacement}>דורש החלפה</Text>
+                          </View>
+                        )}
+                        {fault && (
+                          <TouchableOpacity 
+                            style={styles.markFixedBadge}
+                            onPress={() => confirmMarkFixed(device)}
+                            activeOpacity={0.7}
+                          >
+                            <Feather name="check" size={11} color="#15803D" />
+                            <Text style={styles.markFixedBadgeText}>סמן כתוקן</Text>
                           </TouchableOpacity>
                         )}
                       </View>
@@ -1040,12 +1086,8 @@ export default function KashpalReportScreen() {
                         fault && styles.inventoryFaultBtnActive
                       ]}
                       onPress={() => {
-                        if (fault === 'replacement') {
-                          setReplacingDevice(device);
-                        } else {
-                          setFaultModalDevice(device);
-                          setIsFaultModalVisible(true);
-                        }
+                        setFaultModalDevice(device);
+                        setIsFaultModalVisible(true);
                       }}
                       activeOpacity={0.8}
                     >
@@ -1061,6 +1103,17 @@ export default function KashpalReportScreen() {
                         תקלה
                       </Text>
                     </TouchableOpacity>
+
+                    {fault && (
+                      <TouchableOpacity 
+                        style={styles.inventoryFixedBtn}
+                        onPress={() => confirmMarkFixed(device)}
+                        activeOpacity={0.8}
+                      >
+                        <Feather name="check" size={13} color="#15803D" />
+                        <Text style={styles.inventoryFixedBtnText}>סמן כתוקן</Text>
+                      </TouchableOpacity>
+                    )}
 
                     <TouchableOpacity 
                       style={styles.inventoryEditBtn}
@@ -1130,14 +1183,6 @@ export default function KashpalReportScreen() {
               setFaultModalDevice(null);
             }}
             onSuccess={fetchDevices}
-          />
-
-          {/* Brigade Replacement Modal */}
-          <ReplaceDeviceModal
-            visible={!!replacingDevice}
-            device={replacingDevice}
-            onClose={() => setReplacingDevice(null)}
-            onReplaced={fetchDevices}
           />
         </View>
       ) : (
@@ -2185,6 +2230,38 @@ const styles = StyleSheet.create({
   inventoryFaultBtnText: {
     fontSize: 11,
     color: '#334155',
+    fontWeight: '700',
+  },
+  markFixedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+  },
+  markFixedBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  inventoryFixedBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+  },
+  inventoryFixedBtnText: {
+    fontSize: 11,
+    color: '#15803D',
     fontWeight: '700',
   },
 
