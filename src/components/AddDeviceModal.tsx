@@ -158,26 +158,23 @@ export default function AddDeviceModal({ visible, onClose, onAdded }: AddDeviceM
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen">
-      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
         
-        {/* 1. Header Top Bar */}
+        {/* 1. Tactical Command Header */}
         <View style={styles.headerTop}>
           <View style={styles.headerTopRight}>
             <View style={styles.checkBadgeBox}>
-              <MaterialCommunityIcons name="check-decagram" size={24} color="#FFFFFF" />
+              <MaterialCommunityIcons name="playlist-plus" size={22} color="#FFFFFF" />
             </View>
             <View style={styles.headerTitleColumn}>
-              <Text style={styles.headerTopSubtitle}>דו"ח ציוד טקטי • מחזור א'</Text>
-              <Text style={styles.headerTopTitle}>Add Equipment</Text>
+              <Text style={styles.headerTopTitle}>קליטת ציוד טקטי</Text>
+              <Text style={styles.headerTopSubtitle}>רישום פריט למצבת היחידה</Text>
             </View>
           </View>
 
           <View style={styles.headerTopLeft}>
             <TouchableOpacity style={styles.iconBtnClose} onPress={onClose}>
-              <Feather name="log-out" size={20} color="#DC2626" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.userCircleBtn}>
-              <Feather name="user" size={18} color="#FFFFFF" />
+              <Feather name="x" size={22} color="#0F172A" />
             </TouchableOpacity>
           </View>
         </View>
@@ -441,30 +438,6 @@ export default function AddDeviceModal({ visible, onClose, onAdded }: AddDeviceM
 
           </ScrollView>
         </KeyboardAvoidingView>
-
-        {/* 4. Bottom Navigation Bar */}
-        <View style={styles.bottomNav}>
-          <TouchableOpacity style={styles.navItem} onPress={onClose}>
-            <MaterialCommunityIcons name="archive-outline" size={22} color="#64748B" />
-            <Text style={styles.navText}>קשפ"ל</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.navItem} activeOpacity={1}>
-            <Feather name="plus-circle" size={20} color="#15803D" />
-            <Text style={[styles.navText, styles.navTextActive]}>הוספת ציוד</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.navItem} onPress={onClose}>
-            <Feather name="clock" size={20} color="#64748B" />
-            <Text style={styles.navText}>ציר זמן</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.navItem} onPress={onClose}>
-            <MaterialIcons name="badge" size={22} color="#64748B" />
-            <Text style={styles.navText}>כניסה</Text>
-          </TouchableOpacity>
-        </View>
-
       </SafeAreaView>
     </Modal>
   );

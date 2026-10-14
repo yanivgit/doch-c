@@ -6,6 +6,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { collection, getDocs, addDoc, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { theme } from '../theme/theme';
+import { Feather, MaterialIcons } from '@expo/vector-icons';
+import OfflineBanner from '../components/OfflineBanner';
 
 interface Cycle {
   id: string;
@@ -36,11 +38,11 @@ export default function CycleSelectionScreen() {
     try {
       const snapshot = await withTimeout(getDocs(collection(db, 'doh_tzade')), 8000);
       const fetchedCycles: Cycle[] = [];
-      snapshot.forEach(doc => {
+      snapshot.forEach(docSnap => {
         fetchedCycles.push({
-          id: doc.id,
-          name: doc.data().name,
-          createdAt: doc.data().createdAt?.toMillis() || 0,
+          id: docSnap.id,
+          name: docSnap.data().name,
+          createdAt: docSnap.data().createdAt?.toMillis() || 0,
         });
       });
       fetchedCycles.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -72,7 +74,6 @@ export default function CycleSelectionScreen() {
 
     setIsSubmitting(true);
     try {
-      // 1. Create Firebase document (with 8s timeout)
       const docRef = await withTimeout(
         addDoc(collection(db, 'doh_tzade'), {
           name: newCycleName.trim(),
@@ -81,10 +82,7 @@ export default function CycleSelectionScreen() {
         8000
       );
 
-      // 2. Deferred persistence — saves BOTH userRole + dohId/name to AsyncStorage
       await selectDoh(docRef.id, newCycleName.trim());
-
-      // 3. Navigate to rapid setup explicitly for Kashrag
       router.replace('/report/kashrag/setup');
     } catch (error: any) {
       console.error('Error creating report:', error);
@@ -98,10 +96,7 @@ export default function CycleSelectionScreen() {
 
   const handleSelectCycle = async (id: string, name: string) => {
     try {
-      // Deferred persistence — saves BOTH userRole + dohId/name to AsyncStorage
       await selectDoh(id, name);
-      
-      // Navigate explicitly
       const rolePath = userRole ? userRole.toLowerCase() : '';
       router.replace(`/report/${rolePath}` as any);
     } catch (error) {
@@ -133,7 +128,7 @@ export default function CycleSelectionScreen() {
       [
         { text: 'ביטול', style: 'cancel' },
         { 
-          text: 'מחק', 
+          text: 'מחק לצמיתות', 
           style: 'destructive',
           onPress: async () => {
             try {
@@ -151,31 +146,70 @@ export default function CycleSelectionScreen() {
     );
   };
 
-  // The Kashrag creation form / button block — always visible for Kashrag
+  const formatCycleDate = (timestamp?: number) => {
+    if (!timestamp) return 'תאריך לא זמין';
+    const date = new Date(timestamp);
+    return `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear()} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+  };
+
   const renderKashragCreateSection = () => (
-    <View style={styles.createContainer}>
+    <View style={styles.createCard}>
       {!isCreating ? (
-        <TouchableOpacity style={styles.createButton} onPress={() => setIsCreating(true)}>
-          <Text style={styles.createButtonText}>+ יצירת דו&quot;ח צ חדש</Text>
+        <TouchableOpacity 
+          style={styles.createButton} 
+          onPress={() => setIsCreating(true)}
+          activeOpacity={0.85}
+        >
+          <View style={styles.createButtonIcon}>
+            <Feather name="plus" size={20} color="#FFFFFF" />
+          </View>
+          <View style={styles.createButtonTexts}>
+            <Text style={styles.createButtonText}>+ יצירת דו"ח צ חדש</Text>
+            <Text style={styles.createButtonSubtext}>הקמת מחזור בדיקה חדש והזנת נתוני ציוד</Text>
+          </View>
         </TouchableOpacity>
       ) : (
         <View style={styles.creationForm}>
+          <View style={styles.creationFormHeader}>
+            <MaterialIcons name="playlist-add" size={20} color="#15803D" />
+            <Text style={styles.creationFormTitle}>הגדרת מחזור דו"ח צ' חדש</Text>
+          </View>
+
+          <Text style={styles.inputLabel}>שם המסדר / מחזור בדיקה</Text>
           <TextInput
             style={styles.input}
             placeholder='הזן שם למחזור / דו"ח...'
+            placeholderTextColor="#94A3B8"
             value={newCycleName}
             onChangeText={setNewCycleName}
             autoFocus
           />
+
           <View style={styles.actionRow}>
             <TouchableOpacity
               style={[styles.saveButton, !newCycleName.trim() && styles.disabledButton]}
               onPress={handleCreateNew}
               disabled={!newCycleName.trim() || isSubmitting}
+              activeOpacity={0.85}
             >
-              <Text style={styles.saveButtonText}>{isSubmitting ? 'שומר...' : 'שמור והיכנס'}</Text>
+              {isSubmitting ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Feather name="check" size={18} color="#FFFFFF" style={{ marginLeft: 6 }} />
+                  <Text style={styles.saveButtonText}>שמור והיכנס</Text>
+                </>
+              )}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.cancelButton} onPress={() => setIsCreating(false)}>
+
+            <TouchableOpacity 
+              style={styles.cancelButton} 
+              onPress={() => {
+                setIsCreating(false);
+                setNewCycleName('');
+              }}
+              activeOpacity={0.8}
+            >
               <Text style={styles.cancelButtonText}>ביטול</Text>
             </TouchableOpacity>
           </View>
@@ -186,26 +220,33 @@ export default function CycleSelectionScreen() {
 
   const renderContent = () => {
     if (loading) {
-      return <ActivityIndicator size="large" color={theme.colors.primary} style={{ marginTop: 40 }} />;
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#15803D" />
+          <Text style={styles.loadingText}>טוען מסדרים מהמערכת...</Text>
+        </View>
+      );
     }
 
     if (cycles.length === 0) {
-      // Empty state — different per role
       if (userRole === 'Kashpal') {
         return (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>📭</Text>
-            <Text style={styles.emptyTitle}>אין דוחות צ&apos; פעילים</Text>
-            <Text style={styles.emptySubtitle}>פנה לקשר&quot;ג ליצירת דו&quot;ח חדש</Text>
+          <View style={styles.emptyCard}>
+            <View style={styles.emptyIconCircle}>
+              <Feather name="inbox" size={36} color="#64748B" />
+            </View>
+            <Text style={styles.emptyTitle}>אין דוחות צ' פעילים כעת</Text>
+            <Text style={styles.emptySubtitle}>יש לפנות לקשר"ג הגדודי לצורך פתיחת מחזור מסדר חדש</Text>
           </View>
         );
       }
-      // Kashrag empty state — show message AND create button (already shown above)
       return (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyIcon}>📋</Text>
-          <Text style={styles.emptyTitle}>אין דוחות קיימים במערכת</Text>
-          <Text style={styles.emptySubtitle}>לחץ על &quot;יצירת דו&quot;ח חדש&quot; להתחלה</Text>
+        <View style={styles.emptyCard}>
+          <View style={styles.emptyIconCircle}>
+            <Feather name="clipboard" size={36} color="#15803D" />
+          </View>
+          <Text style={styles.emptyTitle}>טרם הוקמו מסדרים במערכת</Text>
+          <Text style={styles.emptySubtitle}>לחץ על "יצירת דו"ח צ חדש" למעלה כדי להתחיל בספירת הציוד</Text>
         </View>
       );
     }
@@ -215,21 +256,46 @@ export default function CycleSelectionScreen() {
         data={cycles}
         keyExtractor={(item) => item.id}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: 20 }}
-        renderItem={({ item }) => (
-          <View style={styles.cycleItemContainer}>
+        contentContainerStyle={{ paddingBottom: 32 }}
+        showsVerticalScrollIndicator={false}
+        renderItem={({ item, index }) => (
+          <View style={styles.cycleCard}>
             <TouchableOpacity
-              style={styles.cycleItem}
+              style={styles.cycleCardMain}
               onPress={() => handleSelectCycle(item.id, item.name)}
+              activeOpacity={0.8}
             >
-              <Text style={styles.cycleText}>{item.name}</Text>
+              <View style={styles.cycleHeaderRow}>
+                <View style={styles.cycleBadge}>
+                  <Text style={styles.cycleBadgeText}>מסדר #{cycles.length - index}</Text>
+                </View>
+                {item.createdAt ? (
+                  <View style={styles.cycleDateBadge}>
+                    <Feather name="calendar" size={12} color="#64748B" />
+                    <Text style={styles.cycleDateText}>{formatCycleDate(item.createdAt)}</Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <Text style={styles.cycleTitle}>{item.name}</Text>
+
+              <View style={styles.cycleFooterRow}>
+                <View style={styles.enterButtonPill}>
+                  <Text style={styles.enterButtonText}>כניסה למסדר</Text>
+                  <Feather name="chevron-left" size={16} color="#15803D" />
+                </View>
+                <Text style={styles.cycleSubmeta}>לחץ לפתיחת הדו"ח</Text>
+              </View>
             </TouchableOpacity>
+
             {userRole === 'Kashrag' && (
               <TouchableOpacity 
                 style={styles.deleteCycleButton}
                 onPress={() => handleDeleteCycle(item.id, item.name)}
+                activeOpacity={0.7}
+                accessibilityLabel={`מחק מסדר ${item.name}`}
               >
-                <Text style={{ fontSize: 18 }}>🗑️</Text>
+                <Feather name="trash-2" size={18} color="#DC2626" />
               </TouchableOpacity>
             )}
           </View>
@@ -239,23 +305,44 @@ export default function CycleSelectionScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      <OfflineBanner />
+
+      {/* Tactical Top Command Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={logout}>
-          <Text style={styles.backButtonText}>חזור</Text>
+        <View style={styles.headerRight}>
+          <View style={styles.unitBadge}>
+            <MaterialIcons name="shield" size={14} color="#15803D" />
+            <Text style={styles.unitBadgeText}>פורטל מסדרים גדודי</Text>
+          </View>
+          <Text style={styles.title}>בחירת דו"ח צ׳ פעיל</Text>
+        </View>
+
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={logout}
+          activeOpacity={0.8}
+        >
+          <Feather name="log-out" size={16} color="#DC2626" />
+          <Text style={styles.backButtonText}>יציאה</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>בחירת דו&quot;ח צ</Text>
-        <View style={{ width: 60 }} />
       </View>
 
-      {/* Kashrag create section is always visible for that role */}
-      {userRole === 'Kashrag' && renderKashragCreateSection()}
+      <View style={styles.body}>
+        {/* Kashrag create section */}
+        {userRole === 'Kashrag' && renderKashragCreateSection()}
 
-      {!loading && cycles.length > 0 && (
-        <Text style={styles.subtitle}>בחר דו&quot;ח קיים:</Text>
-      )}
+        {!loading && cycles.length > 0 && (
+          <View style={styles.listSectionHeader}>
+            <View style={styles.listSectionCount}>
+              <Text style={styles.listSectionCountText}>{cycles.length}</Text>
+            </View>
+            <Text style={styles.listSectionTitle}>מסדרים זמינים במערכת:</Text>
+          </View>
+        )}
 
-      {renderContent()}
+        {renderContent()}
+      </View>
     </SafeAreaView>
   );
 }
@@ -263,164 +350,343 @@ export default function CycleSelectionScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
-    padding: 20,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    textAlign: 'center',
+    backgroundColor: '#F8FAFC',
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-    marginTop: 10,
-  },
-  backButton: {
-    padding: 10,
-    backgroundColor: theme.colors.surfaceLight,
-    borderRadius: theme.borderRadius.sm,
-    minWidth: 60,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  backButtonText: {
-    fontSize: 16,
-    color: theme.colors.text,
-    fontWeight: 'bold',
-  },
-  createContainer: {
-    marginBottom: 20,
-  },
-  createButton: {
-    backgroundColor: theme.colors.primary,
-    padding: 16,
-    borderRadius: theme.borderRadius.md,
-    alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-  },
-  createButtonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  creationForm: {
-    backgroundColor: theme.colors.surface,
-    padding: 15,
-    borderRadius: theme.borderRadius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.background,
-    color: theme.colors.text,
-    borderRadius: theme.borderRadius.sm,
-    padding: 12,
-    fontSize: 16,
-    textAlign: 'right',
-    marginBottom: 10,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  saveButton: {
-    backgroundColor: theme.colors.success,
-    padding: 12,
-    borderRadius: theme.borderRadius.sm,
-    flex: 1,
-    alignItems: 'center',
-    marginLeft: 10,
-  },
-  disabledButton: {
-    backgroundColor: theme.colors.surfaceLight,
-  },
-  saveButtonText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  cancelButton: {
-    backgroundColor: theme.colors.danger,
-    padding: 12,
-    borderRadius: theme.borderRadius.sm,
-    flex: 1,
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  subtitle: {
-    fontSize: 18,
-    color: theme.colors.textMuted,
-    marginBottom: 15,
-    textAlign: 'right',
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingBottom: 60,
-  },
-  emptyIcon: {
-    fontSize: 60,
-    marginBottom: 16,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 16,
-    color: theme.colors.textMuted,
-    textAlign: 'center',
-  },
-  cycleItemContainer: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
-    marginBottom: 10,
-    gap: 10,
-  },
-  cycleItem: {
-    flex: 1,
-    backgroundColor: theme.colors.surface,
-    padding: 16,
-    borderRadius: theme.borderRadius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+  },
+  headerRight: {
+    alignItems: 'flex-end',
+  },
+  unitBadge: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    marginBottom: 4,
+    gap: 4,
+  },
+  unitBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'right',
+  },
+  backButton: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#FEE2E2',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    gap: 6,
+  },
+  backButtonText: {
+    fontSize: 13,
+    color: '#DC2626',
+    fontWeight: '700',
+  },
+  body: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  createCard: {
+    marginBottom: 16,
+  },
+  createButton: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    backgroundColor: '#15803D',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    elevation: 3,
+    shadowColor: '#15803D',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    gap: 12,
+  },
+  createButtonIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  createButtonTexts: {
+    flex: 1,
+    alignItems: 'flex-end',
+  },
+  createButtonText: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '800',
+    textAlign: 'right',
+  },
+  createButtonSubtext: {
+    color: '#DCFCE7',
+    fontSize: 12,
+    marginTop: 2,
+    textAlign: 'right',
+  },
+  creationForm: {
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#15803D',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+  },
+  creationFormHeader: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 6,
+  },
+  creationFormTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  inputLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#475569',
+    textAlign: 'right',
+    marginBottom: 6,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#F8FAFC',
+    color: '#0F172A',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+    textAlign: 'right',
+    marginBottom: 14,
+    fontWeight: '600',
+  },
+  actionRow: {
+    flexDirection: 'row-reverse',
+    gap: 10,
+  },
+  saveButton: {
+    backgroundColor: '#15803D',
+    paddingVertical: 11,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    flex: 1,
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  disabledButton: {
+    backgroundColor: '#94A3B8',
+  },
+  saveButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  cancelButton: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingVertical: 11,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    minWidth: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButtonText: {
+    color: '#64748B',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  listSectionHeader: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    marginBottom: 10,
+    marginTop: 4,
+    gap: 8,
+  },
+  listSectionCount: {
+    backgroundColor: '#E2E8F0',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  listSectionCountText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  listSectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#475569',
+    textAlign: 'right',
+  },
+  cycleCard: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 10,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
     shadowRadius: 2,
+    overflow: 'hidden',
+  },
+  cycleCardMain: {
+    flex: 1,
+    padding: 16,
+  },
+  cycleHeaderRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  cycleBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  cycleBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  cycleDateBadge: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 4,
+  },
+  cycleDateText: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  cycleTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'right',
+    marginBottom: 10,
+  },
+  cycleFooterRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  enterButtonPill: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+    gap: 4,
+  },
+  enterButtonText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  cycleSubmeta: {
+    fontSize: 12,
+    color: '#94A3B8',
   },
   deleteCycleButton: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)', // Light tint of danger
-    padding: 16,
-    borderRadius: theme.borderRadius.md,
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.5)',
+    paddingHorizontal: 16,
+    paddingVertical: 24,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#FFF1F2',
+    borderRightWidth: 1,
+    borderRightColor: '#FFE4E6',
   },
-  cycleText: {
-    fontSize: 16,
-    textAlign: 'right',
-    color: theme.colors.text,
+  loadingContainer: {
+    paddingVertical: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  emptyCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
+  },
+  emptyIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+    maxWidth: 280,
   },
 });

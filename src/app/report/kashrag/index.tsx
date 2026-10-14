@@ -1,9 +1,36 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, SectionList, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput, Platform, LayoutAnimation, Animated } from 'react-native';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  SectionList, 
+  ScrollView, 
+  TouchableOpacity, 
+  ActivityIndicator, 
+  Alert, 
+  TextInput, 
+  Platform, 
+  LayoutAnimation, 
+  Animated 
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useApp } from '../../../context/AppContext';
-import { getAllDevices, subscribeToAllDevices, Device, deleteDevice, VerificationSession, archiveSession, archiveExpiredSessions, resetSession, getDailyDocId, startGlobalSession, subscribeToVerifiedDevices, reopenKashpalSession, resetPlatoonSession, markDeviceAsFixed } from '../../../firebase/api';
+import { 
+  getAllDevices, 
+  subscribeToAllDevices, 
+  Device, 
+  deleteDevice, 
+  VerificationSession, 
+  archiveExpiredSessions, 
+  resetSession, 
+  getDailyDocId, 
+  startGlobalSession, 
+  subscribeToVerifiedDevices, 
+  reopenKashpalSession, 
+  resetPlatoonSession, 
+  markDeviceAsFixed 
+} from '../../../firebase/api';
 import { db } from '../../../firebase/config';
 import { onSnapshot, doc } from 'firebase/firestore';
 import * as Clipboard from 'expo-clipboard';
@@ -11,7 +38,6 @@ import AddDeviceModal from '../../../components/AddDeviceModal';
 import TransferDeviceModal from '../../../components/TransferDeviceModal';
 import DeviceHistoryModal from '../../../components/DeviceHistoryModal';
 import Snackbar from '../../../components/Snackbar';
-import { theme } from '../../../theme/theme';
 import VerificationHistoryModal from '../../../components/VerificationHistoryModal';
 import { Feather, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import DailySummaryModal from '../../../components/DailySummaryModal';
@@ -21,7 +47,7 @@ import OfflineBanner from '../../../components/OfflineBanner';
 
 export default function KashragReportScreen() {
   const router = useRouter();
-  const { selectedDohId, selectedDohName, logout, login } = useApp();
+  const { selectedDohId, selectedDohName, logout } = useApp();
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
@@ -34,7 +60,7 @@ export default function KashragReportScreen() {
   // Dual-Tab state ('report' vs 'inventory')
   const [activeTab, setActiveTab] = useState<'report' | 'inventory'>('report');
 
-  // New features state
+  // Search & Filtering state
   const [searchQuery, setSearchQuery] = useState('');
   const [groupBy, setGroupBy] = useState<'platoons' | 'types'>('platoons');
   
@@ -75,10 +101,6 @@ export default function KashragReportScreen() {
       }),
     ]).start();
   }, [isBarExpanded, barTranslateY, barOpacity]);
-
-  const handleGoToDohTzade = useCallback(() => {
-    router.replace('/cycle-selection');
-  }, [router]);
 
   const handleOpenTimeline = useCallback(() => {
     setAuditTrailVisible(true);
@@ -133,11 +155,63 @@ export default function KashragReportScreen() {
     );
   }, [handleMarkFixed]);
 
-  const handleKashragPress = useCallback(() => {
-    fetchDevices();
-  }, [fetchDevices]);
+  const handleDelete = useCallback((id: string) => {
+    const deviceToDelete = devices.find(d => d.id === id);
+    const expectedTsadi = deviceToDelete ? String(deviceToDelete.tsadiNumber).trim() : '';
 
-  // Real-time synchronization for all devices matching current dohId
+    if (Platform.OS === 'web') {
+      const input = window.prompt(
+        `אזהרה: מחיקת מכשיר היא פעולה בלתי הפיכה.\nכדי לאשר את המחיקה, הקלד את מספר הצ' המדויק של המכשיר (${expectedTsadi}):`
+      );
+      if (input === null) return;
+      if (input.trim() !== expectedTsadi) {
+        window.alert("מספר הצ' שהוקלד אינו תואם. המחיקה בוטלה.");
+        return;
+      }
+      deleteDevice(id).then(fetchDevices);
+      return;
+    }
+
+    if (Platform.OS === 'ios') {
+      Alert.prompt(
+        'אישור מחיקת מכשיר',
+        `אזהרה: מחיקת מכשיר היא פעולה בלתי הפיכה.\nכדי לאשר את המחיקה, הקלד את מספר הצ' המדויק (${expectedTsadi}):`,
+        [
+          { text: 'ביטול', style: 'cancel' },
+          {
+            text: 'מחק לצמיתות',
+            style: 'destructive',
+            onPress: (input?: string) => {
+              if (input && input.trim() === expectedTsadi) {
+                deleteDevice(id).then(fetchDevices);
+              } else {
+                Alert.alert('שגיאה', "מספר הצ' שהוקלד אינו תואם. המחיקה בוטלה.");
+              }
+            }
+          }
+        ],
+        'plain-text',
+        '',
+        'numeric'
+      );
+      return;
+    }
+
+    Alert.alert(
+      'מחיקת מכשיר',
+      `האם אתה בטוח שברצונך למחוק את מכשיר צ' ${expectedTsadi} לצמיתות?`,
+      [
+        { text: 'ביטול', style: 'cancel' },
+        {
+          text: 'מחק',
+          style: 'destructive',
+          onPress: () => deleteDevice(id).then(fetchDevices)
+        }
+      ]
+    );
+  }, [devices, fetchDevices]);
+
+  // Real-time synchronization for devices
   useEffect(() => {
     if (!selectedDohId) {
       setDevices([]);
@@ -148,12 +222,12 @@ export default function KashragReportScreen() {
     setLoading(true);
     const unsubscribe = subscribeToAllDevices(
       selectedDohId,
-      (liveDevices) => {
-        setDevices(liveDevices);
+      (data) => {
+        setDevices(data);
         setLoading(false);
       },
       (error) => {
-        console.error("Error in Kashrag live devices subscription:", error);
+        console.error("Error subscribing to devices in Kashrag:", error);
         setLoading(false);
       }
     );
@@ -163,28 +237,19 @@ export default function KashragReportScreen() {
     };
   }, [selectedDohId]);
 
-  // Real-time synchronization with active verification session & sweeper for expired sessions
+  // Real-time synchronization for daily verification session
   useEffect(() => {
     if (!selectedDohId) return;
 
+    let unsubscribe: (() => void) | undefined;
     let isMounted = true;
-    let unsubscribe: (() => void) | null = null;
 
     const setupSession = async () => {
-      // 1. Run sweeper for expired sessions BEFORE generating today's getDailyDocId
-      try {
-        await archiveExpiredSessions(selectedDohId);
-      } catch (err) {
-        console.error("Error running archiveExpiredSessions sweeper:", err);
-      }
-
-      if (!isMounted) return;
-
-      // 2. Generate today's getDailyDocId and subscribe to live session
       const docId = getDailyDocId(selectedDohId);
-      const docRef = doc(db, 'verificationSessions', docId);
+      const sessionRef = doc(db, 'verificationSessions', docId);
 
-      unsubscribe = onSnapshot(docRef, async (snap) => {
+      unsubscribe = onSnapshot(sessionRef, async (snap) => {
+        if (!isMounted) return;
         try {
           if (!snap.exists()) {
             setActiveSession(null);
@@ -213,7 +278,6 @@ export default function KashragReportScreen() {
         }
       }, (error) => {
         console.error("Snapshot error in Kashrag:", error);
-        Alert.alert('שגיאה', 'אבד החיבור לשרת. מנסה להתחבר מחדש...');
       });
     };
 
@@ -249,52 +313,17 @@ export default function KashragReportScreen() {
     };
   }, [activeSession?.id]);
 
-  const handleDelete = async (deviceId: string) => {
-    if (Platform.OS === 'web') {
-      const confirmed = window.confirm('האם אתה בטוח שברצונך למחוק ציוד זה מהמערכת? פעולה זו בלתי הפיכה.');
-      if (confirmed) {
-        try {
-          await deleteDevice(deviceId);
-          fetchDevices();
-        } catch {
-          window.alert('לא ניתן למחוק את הציוד');
-        }
-      }
-      return;
-    }
-
-    Alert.alert(
-      'מחיקת ציוד',
-      'האם אתה בטוח שברצונך למחוק ציוד זה מהמערכת? פעולה זו בלתי הפיכה.',
-      [
-        { text: 'ביטול', style: 'cancel' },
-        { 
-          text: 'מחק', 
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteDevice(deviceId);
-              fetchDevices();
-            } catch {
-              Alert.alert('שגיאה', 'לא ניתן למחוק את הציוד');
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  // 1. Filter devices based on search query
   const filteredDevices = useMemo(() => {
-    const lowerQuery = searchQuery.toLowerCase();
-    return devices.filter(device => 
-      device.tsadiNumber.includes(lowerQuery) || 
-      device.type.toLowerCase().includes(lowerQuery) ||
-      (device.assignment || '').toLowerCase().includes(lowerQuery)
+    if (!searchQuery.trim()) return devices;
+    const q = searchQuery.toLowerCase().trim();
+    return devices.filter(d => 
+      (d.tsadiNumber && d.tsadiNumber.toLowerCase().includes(q)) ||
+      (d.type && d.type.toLowerCase().includes(q)) ||
+      (d.assignment && d.assignment.toLowerCase().includes(q)) ||
+      (d.location && d.location.toLowerCase().includes(q))
     );
   }, [devices, searchQuery]);
 
-  // 2. Group devices based on selected toggle
   const groupedDevices = useMemo(() => {
     return filteredDevices.reduce((acc, device) => {
       const key = groupBy === 'platoons' 
@@ -389,33 +418,11 @@ export default function KashragReportScreen() {
       }
     } catch (err) {
       console.error("Error reopening platoon:", err);
-      if (Platform.OS === 'web') {
-        window.alert('לא ניתן לפתוח מחדש את הפלוגה.');
-      } else {
-        Alert.alert('שגיאה', 'לא ניתן לפתוח מחדש את הפלוגה.');
-      }
+      Alert.alert('שגיאה', 'לא ניתן לפתוח מחדש את הפלוגה.');
     } finally {
       setLoading(false);
     }
   }, [selectedDohId]);
-
-  const confirmReopenPlatoon = useCallback((platoonName: string) => {
-    const message = `האם לפתוח מחדש את דו"ח ${platoonName} עבור הקשפ"ל? הקשפ"ל יוכל להמשיך לספור ולאמת פריטים נוספים.`;
-    if (Platform.OS === 'web') {
-      if (window.confirm(message)) {
-        handleReopenPlatoon(platoonName);
-      }
-      return;
-    }
-    Alert.alert(
-      'פתיחה מחדש של פלוגה',
-      message,
-      [
-        { text: 'ביטול', style: 'cancel' },
-        { text: 'פתח מחדש', onPress: () => handleReopenPlatoon(platoonName) }
-      ]
-    );
-  }, [handleReopenPlatoon]);
 
   const handleResetPlatoon = useCallback(async (platoonName: string) => {
     if (!selectedDohId) return;
@@ -423,17 +430,13 @@ export default function KashragReportScreen() {
       setLoading(true);
       await resetPlatoonSession(selectedDohId, platoonName);
       if (Platform.OS === 'web') {
-        window.alert(`נתוני ${platoonName} אופסו בהצלחה ל-0%.`);
+        window.alert(`נתוני ${platoonName} אופסו בהצלחה. הפלוגה חזרה למצב 'ממתין' (0%).`);
       } else {
-        Alert.alert('הצלחה', `נתוני ${platoonName} אופסו בהצלחה ל-0%.`);
+        Alert.alert('הצלחה', `נתוני ${platoonName} אופסו בהצלחה. הפלוגה חזרה למצב 'ממתין' (0%).`);
       }
     } catch (err) {
       console.error("Error resetting platoon:", err);
-      if (Platform.OS === 'web') {
-        window.alert('לא ניתן לאפס את הפלוגה.');
-      } else {
-        Alert.alert('שגיאה', 'לא ניתן לאפס את הפלוגה.');
-      }
+      Alert.alert('שגיאה', 'לא ניתן לאפס את הפלוגה.');
     } finally {
       setLoading(false);
     }
@@ -472,110 +475,7 @@ export default function KashragReportScreen() {
     }
   };
 
-  const handleEndSession = async () => {
-    if (!activeSession) return;
-    
-    const { platoons, platoonTotals, platoonVerified } = platoonStats;
-    const totalBattalionDevices = devices.length;
-    const verifiedBattalionDevices = Object.values(platoonVerified).reduce((a, b) => a + b, 0);
-    const missingBattalionDevices = Math.max(0, totalBattalionDevices - verifiedBattalionDevices);
-
-    const openPlatoons: string[] = [];
-    const missingPlatoons: string[] = [];
-
-    platoons.forEach(p => {
-      const pData = activeSession.platoons?.[p];
-      const pTotal = platoonTotals[p] || 0;
-      const pVer = platoonVerified[p] || 0;
-      if (!pData || pData.status !== 'completed') {
-        openPlatoons.push(`${p} (טרם סיימה - ${pVer}/${pTotal})`);
-      } else if (pVer < pTotal) {
-        missingPlatoons.push(`${p} (${pTotal - pVer} חסרים)`);
-      }
-    });
-
-    const isAllComplete = missingBattalionDevices === 0 && openPlatoons.length === 0;
-
-    let confirmTitle = 'סיום דו"ח גדודי מושלם ✅';
-    let confirmMessage = `כל ${totalBattalionDevices} הפריטים בכל הפלוגות אומתו בהצלחה!\nהאם לנעול ולארכב את הדו"ח בהיסטוריה?`;
-
-    if (!isAllComplete) {
-      confirmTitle = '⚠️ אזהרה: הדו"ח הגדודי אינו שלם!';
-      confirmMessage = `שים לב: אומתו ${verifiedBattalionDevices} מתוך ${totalBattalionDevices} פריטים בגדוד.\n`;
-      if (missingBattalionDevices > 0) {
-        confirmMessage += `נותרו ${missingBattalionDevices} פריטים שלא אומתו!\n\n`;
-      }
-      if (openPlatoons.length > 0) {
-        confirmMessage += `פלוגות שטרם סיימו:\n• ${openPlatoons.join('\n• ')}\n\n`;
-      }
-      if (missingPlatoons.length > 0) {
-        confirmMessage += `פלוגות שסיימו עם חוסרים:\n• ${missingPlatoons.join('\n• ')}\n\n`;
-      }
-      confirmMessage += 'נעילת הדו"ח כעת תארכב את הנתונים כדו"ח עם חוסרים בהיסטוריה.\nהאם ברצונך לסיים ולנעול בכל זאת?';
-    }
-
-    const processEndSession = async () => {
-      setLoading(true);
-      try {
-        const currentDevices = await getAllDevices(selectedDohId as string);
-        await archiveSession(activeSession, currentDevices, isAllComplete ? undefined : {
-          autoArchivedIncomplete: false,
-          completionNotes: `הסתיים עם חוסרים ע"י קשר"ג (${missingBattalionDevices} פריטים לא אומתו)`
-        });
-      } catch (err) {
-        console.error("Error archiving session:", err);
-        Alert.alert('שגיאה', 'לא ניתן לנעול את הדו"ח. אנא נסה שוב.');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (Platform.OS === 'web') {
-      if (window.confirm(`${confirmTitle}\n\n${confirmMessage}`)) {
-        await processEndSession();
-      }
-      return;
-    }
-
-    Alert.alert(
-      confirmTitle, 
-      confirmMessage, 
-      [
-        { text: isAllComplete ? 'ביטול' : 'המשך מסדר', style: 'cancel' },
-        { 
-          text: isAllComplete ? 'סיים ושמור' : 'נעל עם חוסרים', 
-          style: isAllComplete ? 'default' : 'destructive', 
-          onPress: processEndSession 
-        }
-      ]
-    );
-  };
-
-  const handleResetSession = async () => {
-    if (!activeSession || !activeSession.id) return;
-    
-    const confirmMessage = 'האם אתה בטוח שברצונך לאפס את הדו"ח? כל הנתונים של הדו"ח הנוכחי יימחקו והפלוגות יצטרכו להתחיל מחדש (0%).';
-    const processResetSession = async () => {
-      setLoading(true);
-      await resetSession(activeSession.id as string);
-      setLoading(false);
-    };
-
-    if (Platform.OS === 'web') {
-      if (window.confirm(confirmMessage)) {
-        await processResetSession();
-      }
-      return;
-    }
-
-    Alert.alert('איפוס דו"ח', confirmMessage, [
-      { text: 'חזור', style: 'cancel' },
-      { text: 'אפס דו"ח', style: 'destructive', onPress: processResetSession }
-    ]);
-  };
-
   const handleCopyReport = async () => {
-    // Generate text grouped by platoon
     const platoonGroups: Record<string, Device[]> = {};
     devices.forEach(device => {
       const p = device.assignment || 'ללא שיוך';
@@ -588,33 +488,37 @@ export default function KashragReportScreen() {
     
     sortedPlatoons.forEach((platoon) => {
       reportText += `${platoon} :\n`;
-      
       const pDevices = platoonGroups[platoon];
-      // Sort by Equipment Type within platoon
       pDevices.sort((a, b) => (a.type || '').localeCompare(b.type || ''));
-      
       pDevices.forEach(d => {
         const locationPart = d.location ? ` (${d.location})` : '';
         reportText += `${d.type || 'אחר'} - ${d.tsadiNumber || 'ללא צ'}${locationPart}\n`;
       });
-      reportText += '\n'; // Empty line between platoons
+      reportText += '\n';
     });
 
     try {
       await Clipboard.setStringAsync(reportText.trimEnd());
       setSnackbarVisible(true);
-    } catch (e) {
+    } catch {
       Alert.alert('שגיאה', 'לא הצלחנו להעתיק את הדו"ח ללוח.');
     }
   };
 
+  const totalBattalionVerified = useMemo(() => {
+    return Object.values(platoonStats.platoonVerified).reduce((a, b) => a + b, 0);
+  }, [platoonStats]);
+
+  const totalBattalionDevices = devices.length;
+  const overallPercentage = totalBattalionDevices > 0 ? (totalBattalionVerified / totalBattalionDevices) * 100 : 0;
+
+  // Platoon status list inside Tab 1 (דו"ח)
   const renderStatusBars = () => {
     if (!activeSession) return null;
-    
     const { platoons, platoonTotals, platoonVerified } = platoonStats;
 
     return (
-      <View style={styles.progressContainer}>
+      <View style={styles.platoonsGrid}>
         {platoons.map(p => {
           const total = platoonTotals[p];
           const verified = platoonVerified[p] || 0;
@@ -624,35 +528,66 @@ export default function KashragReportScreen() {
           const isCompleted = platoonData?.status === 'completed';
           const isFullyVerified = isCompleted && verified === total && total > 0;
           const isCompletedWithMissing = isCompleted && verified < total;
-          
+
           return (
-            <View key={p} style={styles.progressBarRow}>
-              <Text style={styles.progressLabel}>
-                {p} 
-                {isFullyVerified ? ' ✅' : (isCompletedWithMissing ? ' ⚠️' : (isStarted ? ' 🔄' : ''))}
-              </Text>
-              <View style={styles.progressBarBg}>
-                <View style={[
-                  styles.progressBarFill, 
-                  { 
-                    width: `${percentage}%`,
-                    backgroundColor: isFullyVerified 
-                      ? theme.colors.success 
-                      : (isCompletedWithMissing ? '#D97706' : theme.colors.primary)
-                  }
-                ]} />
+            <View key={p} style={styles.platoonCard}>
+              <View style={styles.platoonCardTop}>
+                <View style={styles.platoonNameGroup}>
+                  <Text style={styles.platoonNameText}>{p}</Text>
+                  {isFullyVerified ? (
+                    <View style={styles.statusPillGreen}>
+                      <Feather name="check-circle" size={12} color="#15803D" />
+                      <Text style={styles.statusPillTextGreen}>100% אומת</Text>
+                    </View>
+                  ) : isCompletedWithMissing ? (
+                    <View style={styles.statusPillAmber}>
+                      <Feather name="alert-triangle" size={12} color="#B45309" />
+                      <Text style={styles.statusPillTextAmber}>הושלם חלקית</Text>
+                    </View>
+                  ) : isStarted ? (
+                    <View style={styles.statusPillBlue}>
+                      <Feather name="clock" size={12} color="#2563EB" />
+                      <Text style={styles.statusPillTextBlue}>בביצוע בשטח</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.statusPillSlate}>
+                      <Text style={styles.statusPillTextSlate}>ממתין</Text>
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.platoonStatsGroup}>
+                  <Text style={styles.platoonCountText}>
+                    {verified} <Text style={{ color: '#94A3B8' }}>/ {total}</Text>
+                  </Text>
+                  <Text style={styles.platoonPercentText}>{Math.round(percentage)}%</Text>
+                  {isStarted && (
+                    <TouchableOpacity
+                      style={styles.miniResetBtn}
+                      onPress={() => confirmResetPlatoon(p)}
+                      activeOpacity={0.7}
+                      accessibilityLabel={`אפס נתוני ${p}`}
+                    >
+                      <Feather name="refresh-ccw" size={12} color="#DC2626" />
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
-              <Text style={styles.progressText}>{verified}/{total}</Text>
-              {isStarted && (
-                <TouchableOpacity
-                  style={styles.miniResetBtn}
-                  onPress={() => confirmResetPlatoon(p)}
-                  activeOpacity={0.7}
-                  accessibilityLabel={`אפס נתוני ${p}`}
-                >
-                  <Feather name="refresh-ccw" size={11} color={theme.colors.danger} />
-                </TouchableOpacity>
-              )}
+
+              {/* Progress Track */}
+              <View style={styles.progressTrack}>
+                <View 
+                  style={[
+                    styles.progressFill, 
+                    { 
+                      width: `${percentage}%`,
+                      backgroundColor: isFullyVerified 
+                        ? '#15803D' 
+                        : (isCompletedWithMissing ? '#D97706' : (isStarted ? '#2563EB' : '#CBD5E1'))
+                    }
+                  ]} 
+                />
+              </View>
             </View>
           );
         })}
@@ -666,13 +601,21 @@ export default function KashragReportScreen() {
         <TouchableOpacity 
           style={styles.accordionHeader} 
           onPress={() => toggleSection(section.title)} 
-          activeOpacity={0.7}
+          activeOpacity={0.8}
         >
           <View style={styles.accordionHeaderContent}>
             <Text style={styles.accordionTitle}>{section.title}</Text>
-            {section.summary ? <Text style={styles.accordionSummary}>{section.summary}</Text> : null}
+            {section.summary ? (
+              <View style={styles.accordionCountBadge}>
+                <Text style={styles.accordionCountText}>{section.summary}</Text>
+              </View>
+            ) : null}
           </View>
-          <Text style={styles.accordionIcon}>{section.isExpanded ? '▲' : '▼'}</Text>
+          <Feather 
+            name={section.isExpanded ? "chevron-up" : "chevron-down"} 
+            size={18} 
+            color="#64748B" 
+          />
         </TouchableOpacity>
       </View>
     );
@@ -680,161 +623,200 @@ export default function KashragReportScreen() {
 
   const renderDeviceItem = useCallback(({ item: device }: { item: Device }) => {
     const fault = device.faultStatus;
+
     return (
       <View 
         style={[
-          styles.deviceRow,
-          fault === 'inspection' && styles.deviceRowInspection,
-          fault === 'replacement' && styles.deviceRowReplacement
+          styles.deviceCard,
+          fault === 'inspection' && styles.deviceCardInspection,
+          fault === 'replacement' && styles.deviceCardReplacement
         ]}
       >
-        <View style={styles.actionButtons}>
+        <View style={styles.deviceCardHeader}>
+          <View style={styles.deviceInfoGroup}>
+            <View style={styles.deviceTitleRow}>
+              <View style={styles.tsadiBadge}>
+                <Text style={styles.tsadiText}>צ׳ {device.tsadiNumber}</Text>
+              </View>
+              <Text style={styles.deviceType}>{device.type}</Text>
+            </View>
+
+            <View style={styles.deviceMetaRow}>
+              <View style={styles.metaTag}>
+                <Feather name="shield" size={11} color="#64748B" />
+                <Text style={styles.metaTagText}>{device.assignment || 'ללא שיוך'}</Text>
+              </View>
+              {device.location ? (
+                <View style={styles.metaTag}>
+                  <Feather name="map-pin" size={11} color="#0284C7" />
+                  <Text style={[styles.metaTagText, { color: '#0284C7' }]}>{device.location}</Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+
+          {/* Fault Banner Pills */}
+          {fault && (
+            <View style={styles.faultHeaderPill}>
+              {fault === 'inspection' && (
+                <View style={styles.badgeInspection}>
+                  <Feather name="alert-circle" size={11} color="#B45309" />
+                  <Text style={styles.badgeInspectionText}>דרושה בדיקת קשר</Text>
+                </View>
+              )}
+              {fault === 'replacement' && (
+                <View style={styles.badgeReplacement}>
+                  <Feather name="alert-octagon" size={11} color="#B91C1C" />
+                  <Text style={styles.badgeReplacementText}>דורש החלפה</Text>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+
+        {/* Action Button Strip */}
+        <View style={styles.deviceActionsStrip}>
           {fault === 'replacement' && (
             <TouchableOpacity 
-              style={[styles.iconButton, styles.iconButtonReplacement]} 
+              style={[styles.actionBtnIcon, styles.actionBtnIconRed]} 
               onPress={() => setReplacingDevice(device)}
               accessibilityLabel="החלפה מול חטיבה"
+              activeOpacity={0.8}
             >
-              <Feather name="refresh-cw" size={16} color="#DC2626" />
+              <Feather name="refresh-cw" size={14} color="#DC2626" />
+              <Text style={[styles.actionBtnIconText, { color: '#DC2626' }]}>החלף בחטיבה</Text>
             </TouchableOpacity>
           )}
+
           {fault && (
             <TouchableOpacity 
-              style={[styles.iconButton, styles.iconButtonFixed]} 
+              style={[styles.actionBtnIcon, styles.actionBtnIconGreen]} 
               onPress={() => confirmMarkFixed(device)}
               accessibilityLabel="סמן כתוקן"
+              activeOpacity={0.8}
             >
-              <Feather name="check" size={17} color="#15803D" />
+              <Feather name="check" size={14} color="#15803D" />
+              <Text style={[styles.actionBtnIconText, { color: '#15803D' }]}>תוקן</Text>
             </TouchableOpacity>
           )}
+
           <TouchableOpacity 
-            style={[
-              styles.iconButton, 
-              fault && (fault === 'replacement' ? styles.iconButtonFaultRed : styles.iconButtonFaultOrange)
-            ]} 
+            style={styles.actionBtnIcon} 
             onPress={() => {
               setFaultModalDevice(device);
               setIsFaultModalVisible(true);
             }}
+            activeOpacity={0.8}
           >
             <Feather 
               name="alert-triangle" 
-              size={16} 
-              color={fault === 'replacement' ? '#DC2626' : (fault === 'inspection' ? '#D97706' : theme.colors.textMuted)} 
+              size={14} 
+              color={fault ? '#DC2626' : '#64748B'} 
             />
+            <Text style={styles.actionBtnIconText}>{fault ? 'עדכן תקלה' : 'דווח תקלה'}</Text>
           </TouchableOpacity>
+
           <TouchableOpacity 
-            style={styles.iconButton} 
+            style={styles.actionBtnIcon} 
             onPress={() => setTransferDevice(device)}
+            activeOpacity={0.8}
           >
-            <Feather name="repeat" size={18} color={theme.colors.primary} />
+            <Feather name="repeat" size={14} color="#0F172A" />
+            <Text style={styles.actionBtnIconText}>העבר פלוגה</Text>
           </TouchableOpacity>
+
           <TouchableOpacity 
-            style={styles.iconButton} 
+            style={styles.actionBtnIcon} 
             onPress={() => setHistoryDevice(device)}
+            activeOpacity={0.8}
           >
-            <Feather name="clock" size={18} color={theme.colors.primary} />
+            <Feather name="clock" size={14} color="#0F172A" />
+            <Text style={styles.actionBtnIconText}>היסטוריה</Text>
           </TouchableOpacity>
+
           <TouchableOpacity 
-            style={[styles.iconButton, styles.iconButtonDanger]} 
+            style={[styles.actionBtnIcon, styles.actionBtnIconDanger]} 
             onPress={() => device.id && handleDelete(device.id)}
+            activeOpacity={0.8}
           >
-            <Feather name="trash-2" size={18} color={theme.colors.danger} />
+            <Feather name="trash-2" size={14} color="#DC2626" />
           </TouchableOpacity>
-        </View>
-        <View style={styles.deviceInfo}>
-          <Text style={styles.deviceType}>{device.type}</Text>
-          {fault ? (
-            <View style={styles.faultBadgesRow}>
-              {fault === 'inspection' && (
-                <View style={styles.faultBadgeInspection}>
-                  <Feather name="alert-circle" size={10} color="#B45309" />
-                  <Text style={styles.faultBadgeTextInspection}>דרושה בדיקת קשר</Text>
-                </View>
-              )}
-              {fault === 'replacement' && (
-                <TouchableOpacity 
-                  style={styles.faultBadgeReplacement}
-                  onPress={() => setReplacingDevice(device)}
-                  activeOpacity={0.7}
-                >
-                  <Feather name="alert-octagon" size={10} color="#B91C1C" />
-                  <Text style={styles.faultBadgeTextReplacement}>דורש החלפה</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity 
-                style={styles.markFixedBadge} 
-                onPress={() => confirmMarkFixed(device)}
-                activeOpacity={0.7}
-              >
-                <Feather name="check" size={10} color="#15803D" />
-                <Text style={styles.markFixedBadgeText}>סמן כתוקן</Text>
-              </TouchableOpacity>
-            </View>
-          ) : null}
-          <Text style={styles.deviceTsadi}>צ&apos;: <Text style={styles.tsadiHighlight}>{device.tsadiNumber}</Text></Text>
-          {groupBy === 'types' ? (
-            <View style={styles.tagContainer}>
-              <Text style={styles.tagText}>{device.assignment}</Text>
-              {device.location ? <Text style={styles.tagText}>{device.location}</Text> : null}
-            </View>
-          ) : device.location ? (
-            <View style={styles.tagContainer}>
-              <Text style={styles.tagText}>{device.location}</Text>
-            </View>
-          ) : null}
         </View>
       </View>
     );
-  }, [groupBy, confirmMarkFixed]);
+  }, [confirmMarkFixed, handleDelete]);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <OfflineBanner />
-      <View style={styles.topHeader}>
-        <Text style={styles.topHeaderText}>דו&quot;ח ציוד טקטי • מחזור א׳</Text>
+
+      {/* 1. Tactical Command Header */}
+      <View style={styles.commandHeader}>
+        <View style={styles.headerRightBlock}>
+          <View style={styles.unitBadge}>
+            <MaterialIcons name="shield" size={15} color="#15803D" />
+            <Text style={styles.unitBadgeText}>
+              {`דו"ח ציוד טקטי • מחזור א׳${selectedDohName && !selectedDohName.includes('מחזור א') ? ` (${selectedDohName})` : ''}`}
+            </Text>
+          </View>
+          <View style={styles.headerTitleRow}>
+            <Text style={styles.headerTitle}>ניהול ציוד ודיווח (קשר"ג)</Text>
+            <View style={styles.commandCenterBadge}>
+              <Text style={styles.commandCenterText}>Command Center</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.headerLeftBlock}>
+          <TouchableOpacity 
+            style={styles.headerActionBtn} 
+            onPress={handleCopyReport}
+            activeOpacity={0.8}
+            accessibilityLabel="העתק דו״ח"
+          >
+            <Feather name="copy" size={15} color="#0F172A" />
+            <Text style={styles.headerActionBtnText}>העתק דו"ח</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.logoutBtn} 
+            onPress={handleLogout}
+            activeOpacity={0.8}
+            accessibilityLabel="התנתק"
+          >
+            <Feather name="log-out" size={18} color="#DC2626" />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      <View style={styles.header}>
-        <Text style={styles.title}>Command Center</Text>
-        <Text style={styles.subtitle}>ניהול ציוד ודיווח (קשר&quot;ג)</Text>
-      </View>
-
-      <View style={styles.actionRow}>
-        <TouchableOpacity style={styles.actionBtn} onPress={handleCopyReport}>
-          <Feather name="copy" size={16} color={theme.colors.accent} />
-          <Text style={styles.actionBtnText}>העתק דו&quot;ח</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Segmented Control (Tabs): דו"ח vs רשימת ציוד */}
+      {/* 2. Tactical Dual-Tab Segmented Switcher */}
       <View style={styles.tabSwitcherContainer}>
         <View style={styles.tabSwitcher}>
           <TouchableOpacity 
             style={[styles.tabButton, activeTab === 'report' && styles.tabButtonActive]}
             onPress={() => setActiveTab('report')}
-            activeOpacity={0.8}
+            activeOpacity={0.85}
           >
             <MaterialCommunityIcons 
               name="clipboard-check-outline" 
-              size={17} 
-              color={activeTab === 'report' ? theme.colors.primary : '#64748B'} 
+              size={18} 
+              color={activeTab === 'report' ? '#15803D' : '#64748B'} 
               style={{ marginLeft: 6 }}
             />
             <Text style={[styles.tabText, activeTab === 'report' && styles.tabTextActive]}>
-              דו&quot;ח
+              דו"ח
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity 
             style={[styles.tabButton, activeTab === 'inventory' && styles.tabButtonActive]}
             onPress={() => setActiveTab('inventory')}
-            activeOpacity={0.8}
+            activeOpacity={0.85}
           >
             <MaterialCommunityIcons 
               name="format-list-bulleted" 
-              size={17} 
-              color={activeTab === 'inventory' ? theme.colors.primary : '#64748B'} 
+              size={18} 
+              color={activeTab === 'inventory' ? '#15803D' : '#64748B'} 
               style={{ marginLeft: 6 }}
             />
             <Text style={[styles.tabText, activeTab === 'inventory' && styles.tabTextActive]}>
@@ -844,53 +826,102 @@ export default function KashragReportScreen() {
         </View>
       </View>
 
+      {/* 3. Main Content Views */}
       <View style={{ flex: 1 }}>
         {loading ? (
-          <View style={styles.center}>
-            <ActivityIndicator size="large" color={theme.colors.primary} />
+          <View style={styles.centerLoading}>
+            <ActivityIndicator size="large" color="#15803D" />
+            <Text style={styles.loadingText}>טוען נתוני גדוד...</Text>
           </View>
         ) : activeTab === 'report' ? (
           <ScrollView 
-            style={styles.container}
-            contentContainerStyle={{ paddingBottom: 120, paddingTop: 4 }}
+            style={styles.scrollContainer}
+            contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
           >
-            <View style={[styles.statusBoardContainer, { paddingHorizontal: 0, paddingBottom: 16 }]}>
-              {activeSession && activeSession.globalStatus !== 'pending' && activeSession.globalStatus !== 'archived' ? (
-                <View style={styles.activeSessionBoard}>
-                  {renderStatusBars()}
-                  {activeSession.globalStatus !== 'active' && (
-                    <View style={{flexDirection: 'row', gap: 12, marginTop: 24}}>
-                      <TouchableOpacity style={styles.startSessionBtn} onPress={handleStartSession}>
-                        <Feather name="play" size={16} color="#FFF" />
-                        <Text style={styles.startSessionBtnText}>הפעל דו&quot;ח לכל הפלוגות</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.historyLogsBtn} onPress={() => setHistoryModalVisible(true)}>
-                        <Feather name="clock" size={16} color={theme.colors.primary} />
-                        <Text style={styles.historyLogsBtnText}>היסטוריה</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </View>
-              ) : (
-                <View style={styles.noSessionBoard}>
-                  <Text style={styles.noSessionText}>אין דו&quot;ח יומי פעיל</Text>
-                  <View style={{flexDirection: 'row', gap: 10, marginTop: 10}}>
-                    <TouchableOpacity style={styles.startSessionBtn} onPress={handleStartSession}>
-                      <Text style={styles.startSessionBtnText}>פתח דו&quot;ח יומי</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.historyLogsBtn} onPress={() => setHistoryModalVisible(true)}>
-                      <Text style={styles.historyLogsBtnText}>היסטוריית דוחות</Text>
-                    </TouchableOpacity>
+            {/* Battalion Operational Status Console */}
+            {activeSession && activeSession.globalStatus !== 'pending' && activeSession.globalStatus !== 'archived' ? (
+              <View style={styles.activeSessionBanner}>
+                <View style={styles.sessionBannerTop}>
+                  <View style={styles.beaconGroup}>
+                    <View style={styles.beaconDot} />
+                    <Text style={styles.beaconTitle}>סבב יומי פעיל בגדוד</Text>
+                  </View>
+                  <View style={styles.sessionProgressStats}>
+                    <Text style={styles.sessionCountText}>
+                      {totalBattalionVerified} / {totalBattalionDevices}
+                    </Text>
+                    <Text style={styles.sessionPercentText}>
+                      ({Math.round(overallPercentage)}%)
+                    </Text>
                   </View>
                 </View>
-              )}
-            </View>
+
+                {/* Overall Progress Gauge */}
+                <View style={styles.overallProgressTrack}>
+                  <View style={[styles.overallProgressFill, { width: `${overallPercentage}%` }]} />
+                </View>
+
+                {/* Platoons Breakdown Grid */}
+                <Text style={styles.sectionHeaderTitle}>התקדמות אימות לפי פלוגות:</Text>
+                {renderStatusBars()}
+
+                {activeSession.globalStatus !== 'active' && (
+                  <View style={styles.sessionActionRow}>
+                    <TouchableOpacity 
+                      style={styles.startSessionBtn} 
+                      onPress={handleStartSession}
+                      activeOpacity={0.85}
+                    >
+                      <Feather name="play" size={16} color="#FFFFFF" />
+                      <Text style={styles.startSessionBtnText}>הפעל דו"ח לכל הפלוגות</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={styles.historyBtn} 
+                      onPress={() => setHistoryModalVisible(true)}
+                      activeOpacity={0.85}
+                    >
+                      <Feather name="clock" size={16} color="#0F172A" />
+                      <Text style={styles.historyBtnText}>היסטוריה</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            ) : (
+              <View style={styles.idleSessionCard}>
+                <View style={styles.idleIconCircle}>
+                  <MaterialCommunityIcons name="clock-start" size={32} color="#15803D" />
+                </View>
+                <Text style={styles.idleTitle}>אין דו״ח יומי פעיל כרגע</Text>
+                <Text style={styles.idleSub}>
+                  הפעל סבב יומי מרוכז כדי לאפשר לפלוגות בשטח להתחיל באימות הציוד
+                </Text>
+                <View style={styles.idleActionsRow}>
+                  <TouchableOpacity 
+                    style={styles.startSessionBtn} 
+                    onPress={handleStartSession}
+                    activeOpacity={0.85}
+                  >
+                    <Feather name="play" size={16} color="#FFFFFF" />
+                    <Text style={styles.startSessionBtnText}>פתח דו"ח יומי</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.historyBtn} 
+                    onPress={() => setHistoryModalVisible(true)}
+                    activeOpacity={0.85}
+                  >
+                    <Feather name="clock" size={16} color="#0F172A" />
+                    <Text style={styles.historyBtnText}>היסטוריית דוחות</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </ScrollView>
         ) : (
+          /* Inventory Tab: Search, Grouping and Accordion SectionList */
           <SectionList
-            style={styles.container}
-            contentContainerStyle={{ paddingBottom: 120 }}
+            style={styles.scrollContainer}
+            contentContainerStyle={styles.inventoryListContent}
             keyboardShouldPersistTaps="handled"
             sections={sections}
             keyExtractor={(item) => item.id || item.tsadiNumber}
@@ -901,39 +932,56 @@ export default function KashragReportScreen() {
             maxToRenderPerBatch={10}
             windowSize={5}
             ListHeaderComponent={
-              <View style={[styles.controlsContainer, { paddingHorizontal: 0, borderBottomWidth: 0, padding: 0, marginVertical: 8 }]}>
-                <View style={styles.searchContainer}>
-                  <Feather name="search" size={20} color={theme.colors.textMuted} style={styles.searchIcon} />
+              <View style={styles.controlsCard}>
+                <View style={styles.searchBar}>
+                  <Feather name="search" size={18} color="#64748B" />
                   <TextInput 
                     style={styles.searchInput}
                     placeholder="חיפוש לפי צ' או סוג..."
-                    placeholderTextColor={theme.colors.textMuted}
+                    placeholderTextColor="#94A3B8"
                     value={searchQuery}
                     onChangeText={setSearchQuery}
                   />
+                  {searchQuery.length > 0 && (
+                    <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearSearchBtn}>
+                      <Feather name="x" size={16} color="#64748B" />
+                    </TouchableOpacity>
+                  )}
                 </View>
                 
-                <View style={styles.toggleContainer}>
+                <View style={styles.groupingToggle}>
                   <TouchableOpacity 
-                    style={[styles.toggleButton, groupBy === 'types' && styles.toggleButtonActive]}
+                    style={[styles.toggleBtn, groupBy === 'types' && styles.toggleBtnActive]}
                     onPress={() => setGroupBy('types')}
+                    activeOpacity={0.8}
                   >
-                    <Text style={[styles.toggleText, groupBy === 'types' && styles.toggleTextActive]}>לפי סוג מכשיר</Text>
+                    <Text style={[styles.toggleBtnText, groupBy === 'types' && styles.toggleBtnTextActive]}>
+                      לפי סוג מכשיר
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity 
-                    style={[styles.toggleButton, groupBy === 'platoons' && styles.toggleButtonActive]}
+                    style={[styles.toggleBtn, groupBy === 'platoons' && styles.toggleBtnActive]}
                     onPress={() => setGroupBy('platoons')}
+                    activeOpacity={0.8}
                   >
-                    <Text style={[styles.toggleText, groupBy === 'platoons' && styles.toggleTextActive]}>לפי פלוגות</Text>
+                    <Text style={[styles.toggleBtnText, groupBy === 'platoons' && styles.toggleBtnTextActive]}>
+                      לפי פלוגות
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </View>
             }
-            ListEmptyComponent={<Text style={styles.emptyText}>לא נמצא ציוד.</Text>}
+            ListEmptyComponent={
+              <View style={styles.emptyInventoryCard}>
+                <Feather name="inbox" size={36} color="#CBD5E1" />
+                <Text style={styles.emptyInventoryText}>לא נמצא ציוד התואם את החיפוש.</Text>
+              </View>
+            }
           />
         )}
       </View>
 
+      {/* Modals & Dialogs */}
       <AddDeviceModal 
         visible={modalVisible} 
         onClose={() => setModalVisible(false)} 
@@ -981,12 +1029,18 @@ export default function KashragReportScreen() {
         onClose={() => setReplacingDevice(null)}
         onReplaced={fetchDevices}
       />
-      {/* Custom Floating Bottom Navigation Bar */}
-      <View style={styles.floatingNavWrapper} pointerEvents="box-none">
-        {/* Animated White Pill Container */}
-        <Animated.View
+
+      <Snackbar 
+        visible={snackbarVisible} 
+        message="הדו״ח הועתק ללוח בהצלחה!" 
+        onDismiss={() => setSnackbarVisible(false)} 
+      />
+
+      {/* 4. Floating Tactical Bottom Navigation Dock */}
+      <View style={styles.floatingBarWrapper} pointerEvents="box-none">
+        <Animated.View 
           style={[
-            styles.floatingBarContainer,
+            styles.floatingBar,
             {
               transform: [{ translateY: barTranslateY }],
               opacity: barOpacity,
@@ -994,57 +1048,54 @@ export default function KashragReportScreen() {
           ]}
           pointerEvents={isBarExpanded ? 'auto' : 'none'}
         >
-          {/* 1. היסטוריה דו"ח צ' (Rightmost in RTL) */}
+          {/* 1. היסטוריה דו"ח צ' */}
           <TouchableOpacity 
             style={styles.floatingNavItem} 
             onPress={() => setHistoryModalVisible(true)}
             activeOpacity={0.7}
           >
-            <Feather name="archive" size={22} color="#475569" />
-            <Text style={styles.floatingNavText}>היסטוריה{'\n'}דו&quot;ח צ&apos;</Text>
+            <Feather name="archive" size={20} color="#475569" />
+            <Text style={styles.floatingNavText}>היסטוריה</Text>
           </TouchableOpacity>
 
-          {/* 2. יומן אירועים (Middle Right in RTL) */}
+          {/* 2. יומן אירועים */}
           <TouchableOpacity 
             style={styles.floatingNavItem} 
             onPress={handleOpenTimeline}
             activeOpacity={0.7}
           >
-            <MaterialCommunityIcons name="history" size={24} color="#475569" />
+            <MaterialCommunityIcons name="history" size={22} color="#475569" />
             <Text style={styles.floatingNavText}>יומן אירועים</Text>
           </TouchableOpacity>
 
-          {/* 3. Center Space Placeholder (where the green + sits) */}
+          {/* Center Space Placeholder for FAB */}
           <View style={styles.centerButtonPlaceholder} />
 
-          {/* 4. קשר"ג (Middle Left in RTL) */}
+          {/* 3. קשר"ג (Active Role) */}
           <TouchableOpacity 
             style={styles.floatingNavItem} 
-            onPress={handleKashragPress}
-            activeOpacity={0.7}
+            activeOpacity={0.8}
           >
-            <MaterialIcons name="military-tech" size={25} color="#0F4C3A" />
-            <Text style={[styles.floatingNavText, styles.floatingNavTextActive]}>קשר&quot;ג</Text>
+            <MaterialIcons name="military-tech" size={24} color="#15803D" />
+            <Text style={[styles.floatingNavText, styles.floatingNavTextActive]}>קשר"ג</Text>
           </TouchableOpacity>
 
-          {/* 5. כניסה (Leftmost in RTL) */}
+          {/* 4. כניסה (Log Out / Return to Entry) */}
           <TouchableOpacity 
             style={styles.floatingNavItem} 
             onPress={handleGoToLogin}
             activeOpacity={0.7}
           >
-            <MaterialCommunityIcons name="badge-account-horizontal-outline" size={24} color="#475569" />
+            <MaterialCommunityIcons name="badge-account-horizontal-outline" size={22} color="#475569" />
             <Text style={styles.floatingNavText}>כניסה</Text>
           </TouchableOpacity>
         </Animated.View>
 
-        {/* Floating Center Green Button (Always visible / anchors in center) */}
+        {/* Center Green FAB Button */}
         <Animated.View 
           style={[
             styles.centerFabAnchor,
-            {
-              transform: [{ scale: fabScale }],
-            }
+            { transform: [{ scale: fabScale }] }
           ]}
           pointerEvents="box-none"
         >
@@ -1062,14 +1113,6 @@ export default function KashragReportScreen() {
           </TouchableOpacity>
         </Animated.View>
       </View>
-
-      <Snackbar
-        visible={snackbarVisible}
-        onDismiss={() => setSnackbarVisible(false)}
-        duration={3000}
-        message="הדו&quot;ח הועתק בהצלחה!"
-        actionLabel="הבנתי"
-      />
     </SafeAreaView>
   );
 }
@@ -1077,68 +1120,114 @@ export default function KashragReportScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingHorizontal: 20,
+    backgroundColor: '#F8FAFC',
+  },
+
+  /* 1. Command Header */
+  commandHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 2,
   },
-  topHeader: {
+  headerRightBlock: {
+    flex: 1,
+    alignItems: 'flex-start',
+    gap: 4,
+  },
+  unitBadge: {
     flexDirection: 'row',
-    width: '100%',
-    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    marginBottom: 16,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    gap: 5,
   },
-  topHeaderText: {
-    fontSize: 13,
-    color: theme.colors.textMuted,
-    fontWeight: '600',
-    textAlign: 'center',
+  unitBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#15803D',
   },
-  header: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: theme.colors.primary,
-  },
-  subtitle: {
-    fontSize: 18,
-    color: theme.colors.text,
-    fontWeight: '800',
-    marginTop: 4,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 12,
-    marginBottom: 16,
-  },
-  actionBtn: {
+  headerTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flexWrap: 'wrap',
+  },
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.2,
+  },
+  commandCenterBadge: {
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: '#E0E7FE',
+  },
+  commandCenterText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#4F46E5',
+    letterSpacing: 0.3,
+  },
+  headerLeftBlock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 6,
+  },
+  headerActionBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  logoutBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  /* 2. Dual-Tab Segmented Switcher */
+  tabSwitcherContainer: {
     paddingHorizontal: 16,
     paddingVertical: 10,
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    borderRadius: 9999,
-  },
-  actionBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: theme.colors.accent,
-  },
-  tabSwitcherContainer: {
-    paddingHorizontal: 20,
-    marginBottom: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
   },
   tabSwitcher: {
     flexDirection: 'row',
-    backgroundColor: '#EEF2F6',
+    backgroundColor: '#F1F5F9',
     borderRadius: 12,
     padding: 3,
+    maxWidth: 640,
+    alignSelf: 'center',
+    width: '100%',
   },
   tabButton: {
     flex: 1,
@@ -1146,564 +1235,660 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
-    borderRadius: 9,
+    borderRadius: 10,
   },
   tabButtonActive: {
     backgroundColor: '#FFFFFF',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
-    shadowRadius: 3,
-    elevation: 1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   tabText: {
     fontSize: 13,
+    fontWeight: '600',
     color: '#64748B',
-    fontWeight: '700',
   },
   tabTextActive: {
     color: '#0F172A',
     fontWeight: '800',
   },
-  statusBoardContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    backgroundColor: 'transparent',
+
+  /* Content Scroll & Lists */
+  scrollContainer: {
+    flex: 1,
   },
-  noSessionBoard: {
-    backgroundColor: '#FFFFFF',
-    padding: theme.spacing.xl,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    alignItems: 'center',
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  noSessionText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: theme.colors.textMuted,
-    marginBottom: theme.spacing.md,
-  },
-  startSessionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: theme.colors.primary,
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 9999,
-  },
-  startSessionBtnText: {
-    color: '#fff',
-    fontWeight: '800',
-    fontSize: 16,
-  },
-  historyLogsBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: 9999,
-  },
-  historyLogsBtnText: {
-    color: theme.colors.primary,
-    fontWeight: '800',
-    fontSize: 16,
-  },
-  activeSessionBoard: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 18,
-    paddingVertical: 18,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    overflow: 'hidden',
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  boardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 20,
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 130,
+    maxWidth: 640,
+    alignSelf: 'center',
     width: '100%',
   },
-  boardTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  pulsingIndicator: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: theme.colors.danger,
-    // Add pulsing animation in a real implementation
-  },
-  boardTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: theme.colors.text,
-  },
-  boardActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  endSessionBtn: {
-    backgroundColor: theme.colors.primary,
+  inventoryListContent: {
     paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: theme.borderRadius.full,
-    alignItems: 'center',
+    paddingTop: 10,
+    paddingBottom: 130,
+    maxWidth: 640,
+    alignSelf: 'center',
+    width: '100%',
+  },
+  centerLoading: {
+    flex: 1,
     justifyContent: 'center',
-    ...(theme.elevation?.sm as object || {}),
-  },
-  endSessionBtnText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  resetSessionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(239, 68, 68, 0.05)',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: theme.borderRadius.full,
-  },
-  resetSessionBtnText: {
-    color: theme.colors.danger,
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  progressContainer: {
-    gap: 16,
-  },
-  progressBarRow: {
-    flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
-  progressLabel: {
-    width: 90,
-    fontSize: 14,
-    fontWeight: '700',
-    color: theme.colors.text,
-    textAlign: 'right',
-  },
-  progressBarBg: {
-    flex: 1,
-    height: 12,
-    backgroundColor: theme.colors.surfaceLight,
-    borderRadius: theme.borderRadius.full,
-    overflow: 'hidden',
-    flexDirection: 'row',
-  },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: theme.borderRadius.full,
-  },
-  progressText: {
-    width: 44,
+  loadingText: {
     fontSize: 13,
-    textAlign: 'left',
     fontWeight: '600',
-    color: theme.colors.textMuted,
+    color: '#64748B',
   },
-  controlsContainer: {
-    padding: theme.spacing.lg,
-    backgroundColor: 'transparent',
-    marginBottom: theme.spacing.sm,
+
+  /* Active Session Banner */
+  activeSessionBanner: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 5,
+    elevation: 2,
   },
-  searchContainer: {
+  sessionBannerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  beaconGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.full,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    paddingHorizontal: 16,
-    marginBottom: 16,
-    ...(theme.elevation?.sm as object || {}),
+    gap: 8,
   },
-  searchIcon: {
-    marginLeft: 12,
+  beaconDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#15803D',
+  },
+  beaconTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  sessionProgressStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  sessionCountText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  sessionPercentText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  overallProgressTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#E2E8F0',
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  overallProgressFill: {
+    height: '100%',
+    backgroundColor: '#15803D',
+    borderRadius: 4,
+  },
+  sectionHeaderTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748B',
+    marginBottom: 10,
+    textAlign: 'right',
+  },
+
+  /* Platoons Breakdown Grid */
+  platoonsGrid: {
+    gap: 10,
+  },
+  platoonCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 12,
+  },
+  platoonCardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  platoonNameGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  platoonNameText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  statusPillGreen: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    gap: 4,
+  },
+  statusPillTextGreen: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  statusPillAmber: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    gap: 4,
+  },
+  statusPillTextAmber: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  statusPillBlue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DBEAFE',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    gap: 4,
+  },
+  statusPillTextBlue: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#1E40AF',
+  },
+  statusPillSlate: {
+    backgroundColor: '#E2E8F0',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  statusPillTextSlate: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  platoonStatsGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  platoonCountText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  platoonPercentText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  miniResetBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progressTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#E2E8F0',
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+
+  sessionActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 16,
+  },
+  startSessionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#15803D',
+    borderRadius: 12,
+    paddingVertical: 12,
+    gap: 6,
+  },
+  startSessionBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  historyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 6,
+  },
+  historyBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+
+  /* Idle Session Card */
+  idleSessionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 32,
+    alignItems: 'center',
+    marginTop: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  idleIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  idleTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 6,
+  },
+  idleSub: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 19,
+    marginBottom: 20,
+    maxWidth: 320,
+  },
+  idleActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+    maxWidth: 340,
+  },
+
+  /* Inventory Controls (Search & Grouping) */
+  controlsCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    marginBottom: 12,
+    gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 12,
+    height: 42,
+    gap: 8,
   },
   searchInput: {
     flex: 1,
-    color: theme.colors.text,
-    paddingVertical: 16,
-    fontSize: 16,
+    fontSize: 13,
+    color: '#0F172A',
     textAlign: 'right',
-    fontWeight: '500',
   },
-  toggleContainer: {
-    flexDirection: 'row',
-    backgroundColor: theme.colors.surfaceLight,
-    borderRadius: theme.borderRadius.full,
+  clearSearchBtn: {
     padding: 4,
   },
-  toggleButton: {
+  groupingToggle: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+    padding: 2,
+  },
+  toggleBtn: {
     flex: 1,
-    paddingVertical: 10,
     alignItems: 'center',
-    borderRadius: theme.borderRadius.full,
+    paddingVertical: 6,
+    borderRadius: 6,
   },
-  toggleButtonActive: {
-    backgroundColor: theme.colors.surface,
-    ...(theme.elevation?.sm as object || {}),
+  toggleBtnActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
-  toggleText: {
-    fontSize: 15,
-    color: theme.colors.textMuted,
+  toggleBtnText: {
+    fontSize: 12,
     fontWeight: '600',
+    color: '#64748B',
   },
-  toggleTextActive: {
-    color: theme.colors.primary,
+  toggleBtnTextActive: {
+    color: '#0F172A',
     fontWeight: '800',
   },
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: theme.colors.background,
-  },
-  emptyText: {
-    textAlign: 'center',
-    color: theme.colors.textMuted,
-    marginTop: 40,
-    fontSize: 16,
-    fontWeight: '500',
-  },
+
+  /* Accordion Headers */
   accordionHeaderContainer: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.md,
-    marginTop: 10,
+    marginTop: 8,
     marginBottom: 6,
-    marginHorizontal: 16,
-    overflow: 'hidden',
-    elevation: 2,
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRightWidth: 4,
-    borderRightColor: theme.colors.primary,
   },
   accordionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    backgroundColor: 'rgba(67, 56, 202, 0.03)',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   accordionHeaderContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
   },
   accordionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-  },
-  accordionSummary: {
     fontSize: 14,
-    color: theme.colors.textMuted,
-    backgroundColor: theme.colors.background,
-    paddingHorizontal: 8,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  accordionCountBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 7,
     paddingVertical: 2,
-    borderRadius: 12,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderRadius: 6,
   },
-  accordionIcon: {
-    fontSize: 16,
-    color: theme.colors.textMuted,
-  },
-  deviceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: 16,
-    marginBottom: 8,
-    marginHorizontal: 16,
-  },
-  deviceInfo: {
-    alignItems: 'flex-end',
-    flex: 1,
-    paddingRight: 16,
-  },
-  deviceType: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: theme.colors.text,
-    marginBottom: 4,
-    textAlign: 'right',
-  },
-  deviceTsadi: {
-    fontSize: 13,
-    color: theme.colors.textMuted,
-    fontWeight: '600',
-  },
-  tsadiHighlight: {
-    color: theme.colors.text,
-    fontWeight: '800',
-  },
-  tagContainer: {
-    flexDirection: 'row',
-    gap: 6,
-    marginTop: 4,
-  },
-  tagText: {
-    backgroundColor: '#F8FAFC',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 9999,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+  accordionCountText: {
     fontSize: 11,
-    color: theme.colors.textMuted,
     fontWeight: '700',
-    overflow: 'hidden',
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  iconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(15, 76, 58, 0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  faultBadgesRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: 6,
-    marginBottom: 4,
-    flexWrap: 'wrap',
-  },
-  iconButtonDanger: {
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-  },
-  iconButtonFaultOrange: {
-    backgroundColor: '#FEF3C7',
-  },
-  iconButtonFaultRed: {
-    backgroundColor: '#FEE2E2',
-  },
-  iconButtonFixed: {
-    backgroundColor: '#F0FDF4',
-    borderWidth: 1,
-    borderColor: '#86EFAC',
-  },
-  iconButtonReplacement: {
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FCA5A5',
-  },
-  markFixedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#86EFAC',
-  },
-  markFixedBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#15803D',
-  },
-  deviceRowInspection: {
-    borderColor: '#F59E0B',
-    backgroundColor: '#FFFDF5',
-    borderWidth: 1.5,
-  },
-  deviceRowReplacement: {
-    borderColor: '#EF4444',
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1.5,
-  },
-  faultBadgeInspection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#FDE68A',
-  },
-  faultBadgeTextInspection: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#B45309',
-  },
-  faultBadgeReplacement: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: '#FEE2E2',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#FECACA',
-  },
-  faultBadgeTextReplacement: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#B91C1C',
-  },
-  brigadeReplaceBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: '#DC2626',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  brigadeReplaceBtnText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
+    color: '#64748B',
   },
 
-  floatingNavWrapper: {
-    position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 24 : 16,
-    left: 16,
-    right: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-  },
-  floatingBarContainer: {
-    width: '100%',
-    maxWidth: 440,
-    height: 64,
+  /* Device Card */
+  deviceCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 28,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
+    padding: 14,
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  deviceCardInspection: {
+    borderColor: '#FDE68A',
+    backgroundColor: '#FFFDF5',
+  },
+  deviceCardReplacement: {
+    borderColor: '#FECACA',
+    backgroundColor: '#FFF5F5',
+  },
+  deviceCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 10,
+  },
+  deviceInfoGroup: {
+    flex: 1,
+    alignItems: 'flex-start',
+    gap: 6,
+  },
+  deviceTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  tsadiBadge: {
+    backgroundColor: '#0F172A',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  tsadiText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  deviceType: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  deviceMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  metaTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    gap: 4,
+  },
+  metaTagText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569',
+  },
+
+  faultHeaderPill: {
+    marginLeft: 6,
+  },
+  badgeInspection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    gap: 4,
+  },
+  badgeInspectionText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  badgeReplacement: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    gap: 4,
+  },
+  badgeReplacementText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+
+  /* Action Buttons Strip */
+  deviceActionsStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    paddingTop: 10,
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  actionBtnIcon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    gap: 5,
+  },
+  actionBtnIconText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  actionBtnIconGreen: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#BBF7D0',
+  },
+  actionBtnIconRed: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#FECACA',
+  },
+  actionBtnIconDanger: {
+    paddingHorizontal: 8,
+  },
+
+  emptyInventoryCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 32,
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 10,
+  },
+  emptyInventoryText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+
+  /* Floating Bottom Navigation Dock */
+  floatingBarWrapper: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  floatingBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 24,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginBottom: Platform.OS === 'ios' ? 24 : 14,
+    width: '92%',
+    maxWidth: 500,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
-    shadowRadius: 14,
+    shadowRadius: 10,
     elevation: 8,
   },
   floatingNavItem: {
-    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 4,
+    gap: 3,
+    minWidth: 56,
   },
   floatingNavText: {
-    fontSize: 10.5,
-    lineHeight: 12.5,
-    fontWeight: '500',
+    fontSize: 10,
+    fontWeight: '600',
     color: '#64748B',
-    marginTop: 2,
     textAlign: 'center',
   },
   floatingNavTextActive: {
-    color: '#0F4C3A',
-    fontWeight: '700',
+    color: '#15803D',
+    fontWeight: '800',
   },
   centerButtonPlaceholder: {
-    width: 60,
-    height: 60,
-  },
-  centerFabAnchor: {
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1001,
-  },
-  centerFabRing: {
     width: 54,
-    height: 54,
-    borderRadius: 18,
-    backgroundColor: '#DCFCE7',
-    borderWidth: 1.5,
-    borderColor: '#A7F3D0',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#0F4C3A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.22,
-    shadowRadius: 6,
-    elevation: 6,
-  },
-  centerFabInner: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: '#0F4C3A',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 
-  miniResetBtn: {
-    padding: 4,
-    borderRadius: 6,
-    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+  /* Floating Center Button */
+  centerFabAnchor: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 44 : 32,
+    alignSelf: 'center',
+    zIndex: 10,
+  },
+  centerFabRing: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 10,
   },
-  resetPlatoonButton: {
-    flexDirection: 'row',
+  centerFabInner: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#15803D',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(239, 68, 68, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  resetPlatoonButtonText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: theme.colors.danger,
+    justifyContent: 'center',
   },
 });

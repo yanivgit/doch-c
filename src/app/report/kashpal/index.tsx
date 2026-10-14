@@ -26,7 +26,6 @@ import {
   getDailyDocId, 
   getDevicesByPlatoonAndDohId,
   subscribeToDevicesByPlatoonAndDohId,
-  subscribeToVerifiedDevices,
   markDeviceAsFixed
 } from '../../../firebase/api';
 import { db } from '../../../firebase/config';
@@ -39,6 +38,7 @@ import ReportFaultModal from '../../../components/ReportFaultModal';
 import Snackbar from '../../../components/Snackbar';
 import OfflineBanner from '../../../components/OfflineBanner';
 import { PLUGOT } from '../../../constants/data';
+import { theme } from '../../../theme/theme';
 
 export default function KashpalReportScreen() {
   const router = useRouter();
@@ -49,7 +49,7 @@ export default function KashpalReportScreen() {
   const [activeSession, setActiveSession] = useState<VerificationSession | null>(null);
   const [verifiedDevicesMap, setVerifiedDevicesMap] = useState<Record<string, { verifiedAt: any; verifiedBy: string }>>({});
   const [snackbarVisible, setSnackbarVisible] = useState(false);
-  const [snackbarMessage, setSnackbarMessage] = useState('לחץ לחיצה ארוכה כדי לסמן ציוד כנמצא');
+  const [snackbarMessage, setSnackbarMessage] = useState('');
   
   // Modals state
   const [editingDevice, setEditingDevice] = useState<Device | null>(null);
@@ -59,16 +59,16 @@ export default function KashpalReportScreen() {
   const [isFaultModalVisible, setIsFaultModalVisible] = useState(false);
   
   // Tactical Mode & Filter states
-  // Mode A: 'report' ("דו"ח פעיל") - Verification UI or Completed Success State
-  // Mode B: 'inventory' ("רשימת ציוד") - Clean read-only inventory, prominent search & dynamic location filters
+  // Mode A: 'report' ("ביקורת שטח") - Fast physical verification
+  // Mode B: 'inventory' ("מצאי וצק״ח") - Full equipment details, transfers, locations, faults
   const [activeTab, setActiveTab] = useState<'report' | 'inventory'>('report');
   const [searchQuery, setSearchQuery] = useState('');
   const [locationFilter, setLocationFilter] = useState('הכל');
 
-  // Pulse animation value for active session indicator
+  // Pulse animation value for active session beacon
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  // Fetch platoon devices (fallback / manual refresh)
+  // Manual fallback refresh
   const fetchDevices = useCallback(async () => {
     if (!selectedPlatoon || !selectedDohId) return;
     try {
@@ -133,13 +133,10 @@ export default function KashpalReportScreen() {
       (error) => {
         console.error("Error in Kashpal live devices subscription:", error);
         setLoading(false);
-        Alert.alert('שגיאה', 'לא הצלחנו לטעון את הציוד. נסה שוב מאוחר יותר.');
       }
     );
 
-    return () => {
-      unsubscribe();
-    };
+    return () => unsubscribe();
   }, [selectedPlatoon, selectedDohId]);
 
   // Real-time synchronization with active session
@@ -163,16 +160,12 @@ export default function KashpalReportScreen() {
       } catch (error) {
         console.error("Error processing snapshot:", error);
       }
-    }, (error) => {
-      console.error("Snapshot error:", error);
-      Alert.alert('שגיאה', 'אבד החיבור לשרת. מנסה להתחבר מחדש...');
     });
 
     return () => unsubscribe();
   }, [selectedDohId]);
 
   // Real-time synchronization for verified devices subcollection
-  // Firestore query constraint: where('platoon', '==', selectedPlatoon) ensures Kashpal only listens to their own platoon
   useEffect(() => {
     if (!activeSession?.id || !selectedPlatoon) {
       setVerifiedDevicesMap({});
@@ -201,9 +194,7 @@ export default function KashpalReportScreen() {
       }
     );
 
-    return () => {
-      unsubscribe();
-    };
+    return () => unsubscribe();
   }, [activeSession?.id, selectedPlatoon]);
 
   // Status checks for current platoon in today's daily session
@@ -221,7 +212,7 @@ export default function KashpalReportScreen() {
 
   const canVerify = isMyPlatoonActive && !isMyPlatoonCompleted;
 
-  // Pulse animation for active session (runs ONLY when canVerify is true, with strict stop() cleanup to prevent battery drain)
+  // Pulse animation for active session beacon
   useEffect(() => {
     if (!canVerify) {
       pulseAnim.setValue(1);
@@ -244,10 +235,7 @@ export default function KashpalReportScreen() {
     );
 
     animation.start();
-
-    return () => {
-      animation.stop();
-    };
+    return () => animation.stop();
   }, [canVerify, pulseAnim]);
 
   // Formatted date string [DD.MM]
@@ -279,28 +267,24 @@ export default function KashpalReportScreen() {
     return { tag: 'ציוד', iconName: 'devices', isCommunity: false, isMaterial: true };
   };
 
-  // Extract unique existing locations from current platoon's devices
+  // Extract unique locations from current platoon
   const uniqueLocations = useMemo(() => {
     const locSet = new Set<string>();
     devices.forEach(d => {
       const loc = d.location?.trim();
-      if (loc) {
-        locSet.add(loc);
-      }
+      if (loc) locSet.add(loc);
     });
     return Array.from(locSet).sort((a, b) => a.localeCompare(b));
   }, [devices]);
 
-  // Filter & sort logic (Location-based sorting + Tsadi/Location/Type search)
+  // Filter & sort logic
   const filteredAndSortedDevices = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     
     let filtered = devices.filter(d => {
-      // Filter by selected location if not 'הכל' (applies to BOTH report and inventory tabs)
       if (locationFilter !== 'הכל') {
         if (d.location?.trim() !== locationFilter) return false;
       }
-
       if (!query) return true;
       const tsadiMatch = d.tsadiNumber?.toLowerCase().includes(query);
       const locMatch = d.location?.toLowerCase().includes(query);
@@ -325,15 +309,6 @@ export default function KashpalReportScreen() {
       return locA.localeCompare(locB);
     });
   }, [devices, searchQuery, locationFilter, activeSession, activeTab, verifiedDevicesMap]);
-
-  // Devices to display in FlatList
-  // When report is completed in Mode A, checklist is completely hidden
-  const displayDevices = useMemo(() => {
-    if (activeTab === 'report' && isMyPlatoonCompleted) {
-      return [];
-    }
-    return filteredAndSortedDevices;
-  }, [activeTab, isMyPlatoonCompleted, filteredAndSortedDevices]);
 
   const handleLogout = () => {
     if (Platform.OS === 'web') {
@@ -400,11 +375,7 @@ export default function KashpalReportScreen() {
         `אימתת ${currentVerifiedCount} מתוך ${devices.length} פריטים בפלוגה ${selectedPlatoon}.\nנותרו ${missingCount} פריטים שלא אומתו.\n\nנעילת הדו"ח תסמן לקשר"ג שסיימת עם חוסרים.\nהאם לנעול בכל זאת?`,
         [
           { text: 'המשך ספירה', style: 'cancel' },
-          { 
-            text: 'נעל דו"ח עם חוסרים', 
-            style: 'destructive',
-            onPress: performEnd
-          }
+          { text: 'נעל דו"ח עם חוסרים', style: 'destructive', onPress: performEnd }
         ]
       );
     } else {
@@ -421,24 +392,29 @@ export default function KashpalReportScreen() {
         `כל ${devices.length} הפריטים של פלוגה ${selectedPlatoon} אומתו בהצלחה!\nהאם לנעול ולשלוח לקשר"ג?`,
         [
           { text: 'ביטול', style: 'cancel' },
-          { 
-            text: 'נעל ושלח דיווח', 
-            style: 'default',
-            onPress: performEnd
-          }
+          { text: 'נעל ושלח דיווח', style: 'default', onPress: performEnd }
         ]
       );
     }
   };
 
   const handleVerifyDevice = async (deviceId: string) => {
-    if (!activeSession || !activeSession.id || !selectedPlatoon) return;
+    if (!activeSession || !activeSession.id || !selectedPlatoon) {
+      setSnackbarMessage('יש לפתוח סבב דו"ח כדי לאמת ציוד');
+      setSnackbarVisible(true);
+      return;
+    }
+    if (!canVerify) {
+      setSnackbarMessage('הסבב הנוכחי נעול או הושלם');
+      setSnackbarVisible(true);
+      return;
+    }
     try {
       const isAlreadyVerified = !!(verifiedDevicesMap[deviceId] || activeSession?.verifiedDevices?.[deviceId]);
       if (isAlreadyVerified) {
         await unverifyDevice(activeSession.id, deviceId);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-        setSnackbarMessage('אימות המכשיר בוטל');
+        setSnackbarMessage('אימות הפריט בוטל');
         setSnackbarVisible(true);
       } else {
         await verifyDevice(activeSession.id, deviceId, `קשפ"ל_${selectedPlatoon}`, selectedPlatoon);
@@ -461,26 +437,32 @@ export default function KashpalReportScreen() {
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <OfflineBanner />
       
-      {/* 1. Top Header Row: In RTL, Child 1 is on the RIGHT, Child 2 is on the LEFT */}
-      <View style={styles.headerTop}>
-        {/* Child 1 (RIGHT): Green Decagram Badge + Titles */}
-        <View style={styles.headerTopRight}>
-          <View style={styles.checkBadgeBox}>
-            <MaterialCommunityIcons name="check-decagram" size={24} color="#FFFFFF" />
+      {/* 1. Tactical Command Header */}
+      <View style={styles.commandHeader}>
+        <View style={styles.headerRightBlock}>
+          <View style={styles.unitBadge}>
+            <MaterialCommunityIcons name="shield-check" size={16} color="#15803D" />
+            <Text style={styles.unitBadgeText}>{selectedPlatoon || 'בחר פלוגה'}</Text>
           </View>
-          <View style={styles.headerTitleColumn}>
-            <Text style={styles.headerTopSubtitle}>דו"ח ציוד מבצעי • מחזור א'</Text>
-            <Text style={styles.headerTopTitle}>Field Checklist</Text>
-          </View>
+          <Text style={styles.headerTitle}>ביקורת כשירות קשפ״ל</Text>
         </View>
 
-        {/* Child 2 (LEFT): Red logout toward inside, Green user circle at the far left edge */}
-        <View style={styles.headerTopLeft}>
-          <TouchableOpacity style={styles.iconBtnLogout} onPress={handleLogout}>
-            <Feather name="log-out" size={20} color="#DC2626" />
+        <View style={styles.headerLeftBlock}>
+          <TouchableOpacity 
+            style={styles.headerActionBtn} 
+            onPress={() => setIsTimelineVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Feather name="clipboard" size={18} color="#0F172A" />
+            <Text style={styles.headerActionBtnText}>יומן אירועים</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.userCircleBtn}>
-            <Feather name="user" size={18} color="#FFFFFF" />
+
+          <TouchableOpacity 
+            style={styles.logoutBtn} 
+            onPress={handleLogout}
+            activeOpacity={0.8}
+          >
+            <Feather name="log-out" size={18} color="#DC2626" />
           </TouchableOpacity>
         </View>
       </View>
@@ -492,598 +474,334 @@ export default function KashpalReportScreen() {
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
-            data={displayDevices}
+            data={filteredAndSortedDevices}
             keyExtractor={(device) => device.id || device.tsadiNumber}
             ListHeaderComponent={
               <View>
-                {/* 1. Top Header Card */}
-                <View style={styles.overviewCard}>
-                  {/* Top Row: Right side icon box + titles, Left side status badge */}
-                  <View style={styles.overviewCardHeader}>
-                    {/* Right side in RTL */}
-                    <View style={styles.overviewTitleRow}>
-                      <View style={styles.overviewIconBox}>
-                        <MaterialCommunityIcons 
-                          name={isMyPlatoonCompleted ? "checkbox-marked-circle" : "checkbox-marked-outline"} 
-                          size={24} 
-                          color="#15803D" 
-                        />
+                {/* 2. Operational Status Console */}
+                {canVerify ? (
+                  <View style={styles.activeSessionBanner}>
+                    <View style={styles.bannerTopRow}>
+                      <View style={styles.beaconIndicator}>
+                        <Animated.View style={[styles.pulseDot, { opacity: pulseAnim }]} />
+                        <Text style={styles.bannerActiveText}>יש דו"ח פעיל!</Text>
                       </View>
-                      <View style={styles.overviewTextCol}>
-                        <Text style={styles.overviewSub}>קשפ"ל מבצעי</Text>
-                        <Text style={styles.overviewMainTitle}>מסדר אימות ציוד</Text>
+                      <View style={styles.progressStats}>
+                        <Text style={styles.progressCountText}>
+                          {verifiedCount} / {devices.length}
+                        </Text>
+                        <Text style={styles.progressPercentText}>
+                          ({Math.round(progressPercent)}%)
+                        </Text>
                       </View>
                     </View>
 
-                    {/* Left side in RTL: Status pill */}
-                    <View style={isMyPlatoonCompleted ? styles.completedStatusPill : styles.operationalStatusPill}>
-                      <View style={isMyPlatoonCompleted ? styles.opGreenDot : styles.opRedDot} />
-                      <Text style={isMyPlatoonCompleted ? styles.completedStatusText : styles.opStatusText}>
-                        {isMyPlatoonCompleted ? 'הושלם בהצלחה' : 'סבב: 5 ש"ח'}
-                      </Text>
+                    {/* Progress Bar Track */}
+                    <View style={styles.progressTrack}>
+                      <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
                     </View>
-                  </View>
 
-                  {/* 2. Segmented Control (Tabs): Mode A ("דו"ח פעיל") vs Mode B ("רשימת ציוד") */}
-                  <View style={styles.tabSwitcher}>
+                    {/* Submit Report Action Button */}
                     <TouchableOpacity 
-                      style={[styles.tabButton, activeTab === 'report' && styles.tabButtonActive]}
-                      onPress={() => setActiveTab('report')}
-                      activeOpacity={0.8}
+                      style={styles.submitReportBtn}
+                      onPress={handleEndSession}
+                      activeOpacity={0.88}
                     >
-                      <MaterialCommunityIcons 
-                        name="clipboard-check-outline" 
-                        size={17} 
-                        color={activeTab === 'report' ? '#15803D' : '#64748B'} 
-                        style={{ marginLeft: 6 }}
-                      />
-                      <Text style={[styles.tabText, activeTab === 'report' && styles.tabTextActive]}>
-                        דו"ח פעיל
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity 
-                      style={[styles.tabButton, activeTab === 'inventory' && styles.tabButtonActive]}
-                      onPress={() => setActiveTab('inventory')}
-                      activeOpacity={0.8}
-                    >
-                      <MaterialCommunityIcons 
-                        name="format-list-bulleted" 
-                        size={17} 
-                        color={activeTab === 'inventory' ? '#15803D' : '#64748B'} 
-                        style={{ marginLeft: 6 }}
-                      />
-                      <Text style={[styles.tabText, activeTab === 'inventory' && styles.tabTextActive]}>
-                        רשימת ציוד
+                      <MaterialCommunityIcons name="send-check" size={18} color="#FFFFFF" />
+                      <Text style={styles.submitReportBtnText}>
+                        {verifiedCount === devices.length && devices.length > 0 
+                          ? 'סיום ונעילת דו״ח (100% אומת)' 
+                          : 'נעל ושלח דו״ח לקשר״ג'}
                       </Text>
                     </TouchableOpacity>
                   </View>
-
-                  {/* 3. Platoon Status / Inventory Status Bar */}
-                  <View style={styles.overviewInfoRow}>
-                    {/* Right side in RTL */}
-                    <View style={styles.overviewInfoRight}>
-                      <MaterialCommunityIcons name="shield-outline" size={17} color="#15803D" />
-                      <Text style={styles.overviewInfoText}>
-                        מצאי ציוד: {selectedPlatoon}
+                ) : isMyPlatoonCompleted ? (
+                  <View style={styles.completedBanner}>
+                    <View style={styles.completedHeader}>
+                      <MaterialCommunityIcons name="check-decagram" size={22} color="#15803D" />
+                      <Text style={styles.completedTitle}>
+                        הדו״ח היומי הושלם ומסונכרן מול הקשר״ג
                       </Text>
                     </View>
-
-                    {/* Left side in RTL */}
-                    <View style={styles.itemCountBadge}>
-                      <Text style={styles.itemCountText}>
-                        {activeTab === 'report' 
-                          ? (isMyPlatoonCompleted 
-                              ? `${verifiedCount}/${devices.length} אומתו (הושלם)` 
-                              : `${verifiedCount}/${devices.length} אומתו`)
-                          : `${devices.length} פריטים במצאי`}
-                      </Text>
-                    </View>
+                    <Text style={styles.completedSubtitle}>
+                      {verifiedCount} מתוך {devices.length} פריטים נבדקו ואומתו. רשימת הציוד פתוחה לעיון ועדכון מיקומים.
+                    </Text>
                   </View>
+                ) : (
+                  <View style={styles.idleSessionBanner}>
+                    <View style={styles.idleTextGroup}>
+                      <Text style={styles.idleTitle}>אין דו״ח פעיל כרגע</Text>
+                      <Text style={styles.idleSub}>הפעל סבב יומי כדי לאמת את ציוד הפלוגה בשטח</Text>
+                    </View>
+                    <TouchableOpacity 
+                      style={styles.startSessionBtn}
+                      onPress={handleStartSession}
+                      activeOpacity={0.85}
+                    >
+                      <Feather name="play" size={15} color="#FFFFFF" />
+                      <Text style={styles.startSessionBtnText}>הפעל דו״ח</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* 3. Segmented Mode Switcher */}
+                <View style={styles.modeSwitcher}>
+                  <TouchableOpacity 
+                    style={[styles.modeTab, activeTab === 'report' && styles.modeTabActive]}
+                    onPress={() => setActiveTab('report')}
+                    activeOpacity={0.85}
+                  >
+                    <MaterialCommunityIcons 
+                      name="clipboard-check-outline" 
+                      size={18} 
+                      color={activeTab === 'report' ? '#15803D' : '#64748B'} 
+                    />
+                    <Text style={[styles.modeTabText, activeTab === 'report' && styles.modeTabTextActive]}>
+                      ביקורת שטח ({devices.length - verifiedCount} נותרו)
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={[styles.modeTab, activeTab === 'inventory' && styles.modeTabActive]}
+                    onPress={() => setActiveTab('inventory')}
+                    activeOpacity={0.85}
+                  >
+                    <MaterialCommunityIcons 
+                      name="format-list-bulleted" 
+                      size={18} 
+                      color={activeTab === 'inventory' ? '#15803D' : '#64748B'} 
+                    />
+                    <Text style={[styles.modeTabText, activeTab === 'inventory' && styles.modeTabTextActive]}>
+                      מצאי וצק״ח ({devices.length})
+                    </Text>
+                  </TouchableOpacity>
                 </View>
 
-                {/* 3. Active Report Card (Mode A) */}
-                {activeTab === 'report' && (
-                  isMyPlatoonCompleted ? (
-                    verifiedCount === devices.length && devices.length > 0 ? (
-                      /* SUCCESS UI STATE WHEN REPORT IS 100% COMPLETED */
-                      <View style={styles.successCard}>
-                        {/* Large Green Checkmark Icon */}
-                        <View style={styles.successIconOuterCircle}>
-                          <View style={styles.successIconInnerCircle}>
-                            <MaterialCommunityIcons name="check-decagram" size={44} color="#FFFFFF" />
-                          </View>
-                        </View>
-
-                        {/* Success Message: סיימת דו"ח לתאריך [DD.MM] */}
-                        <Text style={styles.successTitleText}>
-                          סיימת דו"ח לתאריך {formattedDate}
-                        </Text>
-
-                        <Text style={styles.successSubtitleText}>
-                          כל פריטי הציוד של {selectedPlatoon} נבדקו ואושרו בהצלחה. הדיווח ננעל ומסונכרן מול הקשר"ג.
-                        </Text>
-
-                        {/* Details Summary Card */}
-                        <View style={styles.successDetailsCard}>
-                          <View style={styles.successDetailRow}>
-                            <MaterialCommunityIcons name="shield-check" size={20} color="#15803D" />
-                            <Text style={styles.successDetailText}>
-                              סטטוס דיווח: הושלם ומאושר
-                            </Text>
-                          </View>
-                          <View style={styles.successDetailDivider} />
-                          <View style={styles.successDetailRow}>
-                            <MaterialIcons name="devices" size={20} color="#1E40AF" />
-                            <Text style={styles.successDetailText}>
-                              סה״כ פריטים שאומתו: {verifiedCount} מתוך {devices.length}
-                            </Text>
-                          </View>
-                        </View>
-
-                        {/* Quick Action: View Equipment List */}
-                        <TouchableOpacity 
-                          style={styles.viewInventoryBtn}
-                          onPress={() => setActiveTab('inventory')}
-                          activeOpacity={0.85}
-                        >
-                          <MaterialCommunityIcons name="format-list-bulleted" size={18} color="#15803D" />
-                          <Text style={styles.viewInventoryBtnText}>צפייה ברשימת הציוד המלאה</Text>
-                        </TouchableOpacity>
-                      </View>
-                    ) : (
-                      /* WARNING UI STATE WHEN REPORT IS COMPLETED WITH MISSING ITEMS */
-                      <View style={styles.incompleteCard}>
-                        {/* Amber/Orange Alert Icon */}
-                        <View style={styles.incompleteIconOuterCircle}>
-                          <View style={styles.incompleteIconInnerCircle}>
-                            <MaterialCommunityIcons name="shield-alert" size={40} color="#FFFFFF" />
-                          </View>
-                        </View>
-
-                        {/* Message: הדו"ח ננעל עם חוסרים לתאריך [DD.MM] */}
-                        <Text style={styles.incompleteTitleText}>
-                          הדו"ח ננעל עם חוסרים לתאריך {formattedDate}
-                        </Text>
-
-                        <Text style={styles.incompleteSubtitleText}>
-                          דו"ח {selectedPlatoon} ננעל ונשלח לקשר"ג עם {devices.length - verifiedCount} פריטים שלא אותרו/נבדקו.
-                        </Text>
-
-                        {/* Details Summary Card */}
-                        <View style={styles.incompleteDetailsCard}>
-                          <View style={styles.successDetailRow}>
-                            <MaterialCommunityIcons name="alert-octagon" size={20} color="#D97706" />
-                            <Text style={[styles.successDetailText, { color: '#B45309' }]}>
-                              סטטוס דיווח: הסתיים עם חוסרים ({devices.length - verifiedCount} לא נבדקו)
-                            </Text>
-                          </View>
-                          <View style={styles.successDetailDivider} />
-                          <View style={styles.successDetailRow}>
-                            <MaterialIcons name="devices" size={20} color="#D97706" />
-                            <Text style={styles.successDetailText}>
-                              סה״כ פריטים שאומתו: {verifiedCount} מתוך {devices.length}
-                            </Text>
-                          </View>
-                        </View>
-
-                        {/* Quick Action: View Equipment List */}
-                        <TouchableOpacity 
-                          style={styles.incompleteViewInventoryBtn}
-                          onPress={() => setActiveTab('inventory')}
-                          activeOpacity={0.85}
-                        >
-                          <MaterialCommunityIcons name="format-list-bulleted" size={18} color="#D97706" />
-                          <Text style={styles.incompleteViewInventoryBtnText}>צפייה ברשימת הציוד והחוסרים</Text>
-                        </TouchableOpacity>
-                        
-                        <Text style={styles.reopenHintText}>
-                          לפתיחה מחדש להמשך אימות, יש לפנות לקשר"ג.
-                        </Text>
-                      </View>
-                    )
-                  ) : (
-                    /* ACTIVE REPORT VERIFICATION UI */
-                    canVerify ? (
-                      <View style={styles.sessionCard}>
-                        {/* Header: Title with pulsing red dot on right, Progress on left */}
-                        <View style={styles.sessionCardHeader}>
-                          <View style={styles.sessionTitleGroup}>
-                            <Animated.View style={[styles.sessionRedDot, { opacity: pulseAnim }]} />
-                            <Text style={styles.sessionTitleText}>
-                              יש דו"ח פעיל!
-                            </Text>
-                          </View>
-
-                          <View style={styles.progressCounterGroup}>
-                            <Text style={styles.progressCounterLabel}>התקדמות</Text>
-                            <Text style={styles.progressCounterValue}>
-                              {verifiedCount}/{devices.length}
-                            </Text>
-                          </View>
-                        </View>
-
-                        {/* Instruction row with hand pointer icon */}
-                        <View style={styles.sessionInstructionRow}>
-                          <MaterialIcons name="touch-app" size={18} color="#D97706" />
-                          <Text style={styles.sessionInstructionText}>
-                            לחץ לחיצה ארוכה על מקלט לאישור פיזי של כל פריט
-                          </Text>
-                        </View>
-
-                        {/* Progress Bar (Fills from right in RTL) */}
-                        <View style={styles.progressBarTrack}>
-                          <View 
-                            style={[
-                              styles.progressBarFill, 
-                              { width: `${progressPercent}%` }
-                            ]} 
-                          />
-                        </View>
-
-                        {/* Large Green Bottom Button: סיימתי דיווח */}
-                        <TouchableOpacity 
-                          style={styles.finishSessionBtn} 
-                          onPress={handleEndSession}
-                          activeOpacity={0.85}
-                        >
-                          <MaterialCommunityIcons name="check-decagram" size={20} color="#FFFFFF" />
-                          <Text style={styles.finishSessionBtnText}>סיימתי דיווח</Text>
-                        </TouchableOpacity>
-                      </View>
-                    ) : (
-                      <View style={styles.noSessionCard}>
-                        <Feather name="info" size={24} color="#334155" style={{ marginBottom: 6 }} />
-                        <Text style={styles.noSessionTitle}>אין דו"ח פעיל כרגע</Text>
-                        <Text style={styles.noSessionSub}>התחל דו"ח כדי לאשר את ציוד הפלוגה</Text>
-                        <TouchableOpacity 
-                          style={styles.startSessionBtn} 
-                          onPress={handleStartSession}
-                          activeOpacity={0.85}
-                        >
-                          <Feather name="play" size={16} color="#FFFFFF" />
-                          <Text style={styles.startSessionBtnText}>התחל דו"ח עצמאי</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )
-                  )
-                )}
-
-                {/* 4. Search Bar & Location Filter Section (placed directly above the Equipment List) */}
-                {!(activeTab === 'report' && isMyPlatoonCompleted) && (
-                  <View style={styles.searchFilterSection}>
-                    {/* Search Bar */}
-                    <View style={styles.prominentSearchBar}>
-                      <Feather name="search" size={19} color="#15803D" style={styles.searchIcon} />
-                      <TextInput
-                        style={styles.prominentSearchInput}
-                        placeholder="חיפוש מהיר לפי צדיק, סוג או מיקום..."
-                        value={searchQuery}
-                        onChangeText={setSearchQuery}
-                        textAlign="right"
-                        placeholderTextColor="#64748B"
-                      />
-                      {searchQuery.length > 0 && (
-                        <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearSearchBtn}>
-                          <Feather name="x" size={17} color="#334155" />
-                        </TouchableOpacity>
-                      )}
-                    </View>
-
-                    {/* Dynamic Location Filter Chips */}
-                    <ScrollView 
-                      horizontal 
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={styles.categoryChipsContainer}
-                    >
-                      <TouchableOpacity
-                        key="all"
-                        style={[styles.chipButton, locationFilter === 'הכל' && styles.chipButtonActive]}
-                        onPress={() => setLocationFilter('הכל')}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={[styles.chipText, locationFilter === 'הכל' && styles.chipTextActive]}>
-                          הכל
-                        </Text>
-                      </TouchableOpacity>
-
-                      {uniqueLocations.map((loc) => {
-                        const isSelected = locationFilter === loc;
-                        return (
-                          <TouchableOpacity
-                            key={loc}
-                            style={[styles.chipButton, isSelected && styles.chipButtonActive]}
-                            onPress={() => setLocationFilter(loc)}
-                            activeOpacity={0.8}
-                          >
-                            <Text style={[styles.chipText, isSelected && styles.chipTextActive]}>
-                              {loc}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </ScrollView>
-                  </View>
-                )}
-
-                {/* 5. The Equipment List Section Header */}
-                {!(activeTab === 'report' && isMyPlatoonCompleted) && (
-                  <View style={styles.listSectionHeader}>
-                    <Text style={styles.listSectionTitle}>
-                      {activeTab === 'report' 
-                        ? `פריטי ביקורת לפלוגה ${selectedPlatoon}` 
-                        : `רשימת ציוד לפלוגה ${selectedPlatoon}`}
-                      {(searchQuery.trim().length > 0 || locationFilter !== 'הכל') 
-                        ? ` (${filteredAndSortedDevices.length})` 
-                        : ` (${devices.length})`}
-                    </Text>
-                    {(searchQuery.trim().length > 0 || locationFilter !== 'הכל') && (
-                      <TouchableOpacity onPress={resetFilters} style={styles.resetFilterBtn}>
-                        <Text style={styles.resetFilterText}>איפוס סינונים</Text>
+                {/* 4. Search & Filter Bar */}
+                <View style={styles.searchSection}>
+                  <View style={styles.searchBar}>
+                    <Feather name="search" size={18} color="#64748B" style={styles.searchIcon} />
+                    <TextInput
+                      style={styles.searchInput}
+                      placeholder="חיפוש לפי צ׳, סוג או מיקום..."
+                      value={searchQuery}
+                      onChangeText={setSearchQuery}
+                      textAlign="right"
+                      placeholderTextColor="#94A3B8"
+                    />
+                    {searchQuery.length > 0 && (
+                      <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearBtn}>
+                        <Feather name="x" size={16} color="#64748B" />
                       </TouchableOpacity>
                     )}
+                  </View>
+
+                  {/* Horizontal Location Chips */}
+                  <ScrollView 
+                    horizontal 
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.locationChipsScroll}
+                  >
+                    <TouchableOpacity
+                      style={[styles.locChip, locationFilter === 'הכל' && styles.locChipActive]}
+                      onPress={() => setLocationFilter('הכל')}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.locChipText, locationFilter === 'הכל' && styles.locChipTextActive]}>
+                        כל המיקומים
+                      </Text>
+                    </TouchableOpacity>
+
+                    {uniqueLocations.map((loc) => {
+                      const isSelected = locationFilter === loc;
+                      return (
+                        <TouchableOpacity
+                          key={loc}
+                          style={[styles.locChip, isSelected && styles.locChipActive]}
+                          onPress={() => setLocationFilter(loc)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={[styles.locChipText, isSelected && styles.locChipTextActive]}>
+                            {loc}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+
+                {/* Active Filter Reset Info */}
+                {(searchQuery.trim().length > 0 || locationFilter !== 'הכל') && (
+                  <View style={styles.filterFeedbackRow}>
+                    <Text style={styles.filterFeedbackText}>
+                      נמצאו {filteredAndSortedDevices.length} פריטים
+                    </Text>
+                    <TouchableOpacity onPress={resetFilters} style={styles.resetFilterLink}>
+                      <Text style={styles.resetFilterLinkText}>איפוס סינונים</Text>
+                    </TouchableOpacity>
                   </View>
                 )}
               </View>
             }
             ListEmptyComponent={
-              (activeTab === 'report' && isMyPlatoonCompleted) ? null : (
-                <View style={styles.emptyContainer}>
-                  <Feather name="inbox" size={36} color="#64748B" style={{ marginBottom: 8 }} />
-                  <Text style={styles.emptyText}>
-                    {loading 
-                      ? 'טוען פריטים...' 
-                      : (searchQuery.trim() || locationFilter !== 'הכל' 
-                        ? 'לא נמצאו תוצאות לחיפוש/סינון הנוכחי.' 
-                        : 'לא נמצא ציוד לפלוגה זו.')}
-                  </Text>
-                  {(searchQuery.trim().length > 0 || locationFilter !== 'הכל') && (
-                    <TouchableOpacity onPress={resetFilters} style={[styles.resetFilterBtn, { marginTop: 8 }]}>
-                      <Text style={[styles.resetFilterText, { fontSize: 13 }]}>איפוס חיפוש וסינון</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )
+              <View style={styles.emptyContainer}>
+                <Feather name="inbox" size={40} color="#94A3B8" style={{ marginBottom: 10 }} />
+                <Text style={styles.emptyTitle}>לא נמצא ציוד מתאים</Text>
+                <Text style={styles.emptySub}>
+                  {searchQuery.trim() || locationFilter !== 'הכל'
+                    ? 'נסה לשנות את החיפוש או הסינון'
+                    : 'לא רשום ציוד עבור פלוגה זו'}
+                </Text>
+                {(searchQuery.trim() || locationFilter !== 'הכל') && (
+                  <TouchableOpacity onPress={resetFilters} style={styles.emptyResetBtn}>
+                    <Text style={styles.emptyResetBtnText}>איפוס חיפוש</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             }
             renderItem={({ item: device }) => {
               const isVerified = !!(device.id && (verifiedDevicesMap[device.id] || activeSession?.verifiedDevices?.[device.id]));
               const cat = getDeviceCategory(device.type);
               const fault = device.faultStatus;
 
-              // MODE A: Full verification card with checkboxes, pills, and long-press
+              // MODE A: Fast Verification Checklist Card
               if (activeTab === 'report') {
                 return (
-                  <TouchableOpacity
-                    style={[
-                      styles.deviceCard,
-                      isVerified && styles.deviceCardVerified,
-                      fault === 'inspection' && styles.deviceCardInspection,
-                      fault === 'replacement' && styles.deviceCardReplacement
-                    ]}
-                    activeOpacity={0.8}
-                    delayLongPress={400}
-                    onPress={() => {
-                      if (!activeSession) {
-                        setSnackbarMessage('יש להתחיל או להמתין להפעלת דו"ח כדי לאמת ציוד');
-                        setSnackbarVisible(true);
-                      } else if (canVerify) {
-                        setSnackbarMessage('לחץ לחיצה ארוכה לאימות ציוד');
-                        setSnackbarVisible(true);
-                      }
-                    }}
-                    onLongPress={() => {
-                      if (canVerify && device.id) {
-                        handleVerifyDevice(device.id);
-                      }
-                    }}
-                  >
-                    {/* Right side in RTL: Icon Box + Details */}
-                    <View style={styles.deviceRightSide}>
-                      <View style={[
-                        styles.deviceIconBox,
-                        isVerified ? styles.deviceIconBoxVerified : styles.deviceIconBoxPending,
-                        fault === 'inspection' && styles.deviceIconBoxInspection,
-                        fault === 'replacement' && styles.deviceIconBoxReplacement
-                      ]}>
-                        {cat.isCommunity ? (
-                          <MaterialCommunityIcons 
-                            name={cat.iconName as any} 
-                            size={24} 
-                            color={fault === 'replacement' ? '#DC2626' : (fault === 'inspection' ? '#D97706' : (isVerified ? '#15803D' : '#4F46E5'))} 
-                          />
-                        ) : (
+                  <View style={[
+                    styles.card,
+                    isVerified && styles.cardVerified,
+                    fault === 'inspection' && styles.cardInspection,
+                    fault === 'replacement' && styles.cardReplacement
+                  ]}>
+                    {/* Primary Tap Area for instant verification */}
+                    <TouchableOpacity 
+                      style={styles.cardInteractiveRow}
+                      activeOpacity={0.85}
+                      onPress={() => device.id && handleVerifyDevice(device.id)}
+                    >
+                      {/* Right Column: Category Icon + Device Info */}
+                      <View style={styles.cardInfoGroup}>
+                        <View style={[
+                          styles.catIconContainer,
+                          isVerified ? styles.catIconVerified : styles.catIconPending
+                        ]}>
                           <MaterialIcons 
                             name={cat.iconName as any} 
-                            size={24} 
-                            color={fault === 'replacement' ? '#DC2626' : (fault === 'inspection' ? '#D97706' : (isVerified ? '#15803D' : '#4F46E5'))} 
+                            size={22} 
+                            color={isVerified ? '#15803D' : '#0F172A'} 
                           />
-                        )}
-                      </View>
-
-                      <View style={styles.deviceInfoColumn}>
-                        <View style={styles.deviceTitleRow}>
-                          <Text style={[styles.deviceTitleText, isVerified && styles.deviceTitleVerified]}>
-                            {device.type}
-                          </Text>
-                          <View style={styles.categoryBadge}>
-                            <Text style={styles.categoryBadgeText}>{cat.tag}</Text>
-                          </View>
-                          {/* Fault Indicators */}
-                          {fault === 'inspection' && (
-                            <View style={styles.faultBadgeInspection}>
-                              <Feather name="alert-circle" size={11} color="#B45309" />
-                              <Text style={styles.faultBadgeTextInspection}>דרושה בדיקת קשר</Text>
-                            </View>
-                          )}
-                          {fault === 'replacement' && (
-                            <View style={styles.faultBadgeReplacement}>
-                              <Feather name="alert-octagon" size={11} color="#B91C1C" />
-                              <Text style={styles.faultBadgeTextReplacement}>דורש החלפה</Text>
-                            </View>
-                          )}
-                          {fault && (
-                            <TouchableOpacity 
-                              style={styles.markFixedBadge}
-                              onPress={() => confirmMarkFixed(device)}
-                              activeOpacity={0.7}
-                            >
-                              <Feather name="check" size={11} color="#15803D" />
-                              <Text style={styles.markFixedBadgeText}>סמן כתוקן</Text>
-                            </TouchableOpacity>
-                          )}
                         </View>
-                        <Text style={styles.deviceSubtitleText}>
-                          <Text style={styles.tsadiHighlightText}>צ': {device.tsadiNumber}</Text> • מיקום: {device.location || 'ללא מיקום'}
-                        </Text>
+
+                        <View style={styles.cardDetails}>
+                          <View style={styles.cardTitleRow}>
+                            <Text style={styles.deviceTsadi}>צ׳ {device.tsadiNumber}</Text>
+                            <Text style={styles.deviceType}>{device.type}</Text>
+                          </View>
+
+                          <View style={styles.cardLocationRow}>
+                            <TouchableOpacity 
+                              style={styles.locationPill}
+                              onPress={() => setEditingDevice(device)}
+                              activeOpacity={0.8}
+                            >
+                              <Feather name="map-pin" size={12} color="#0284C7" className="feather-map-pin" />
+                              <Text style={styles.locationPillText}>
+                                {device.location || 'הגדר מיקום'}
+                              </Text>
+                            </TouchableOpacity>
+
+                            {/* Fault indicators */}
+                            {fault === 'inspection' && (
+                              <View style={styles.badgeInspection}>
+                                <Feather name="alert-circle" size={11} color="#B45309" />
+                                <Text style={styles.badgeInspectionText}>בדיקת קשר</Text>
+                              </View>
+                            )}
+                            {fault === 'replacement' && (
+                              <View style={styles.badgeReplacement}>
+                                <Feather name="alert-octagon" size={11} color="#B91C1C" />
+                                <Text style={styles.badgeReplacementText}>דורש החלפה</Text>
+                              </View>
+                            )}
+                          </View>
+                        </View>
                       </View>
-                    </View>
 
-                    {/* Left side in RTL: Status Button / Badge + Edit location */}
-                    <View style={styles.deviceLeftSide}>
-                      <TouchableOpacity 
-                        style={styles.editLocationBtn}
-                        onPress={() => setEditingDevice(device)}
-                      >
-                        <Feather name="map-pin" size={16} color="#334155" />
-                      </TouchableOpacity>
-
-                      {isVerified ? (
-                        <TouchableOpacity 
-                          style={styles.verifiedPill}
-                          onPress={() => {
-                            if (canVerify) {
-                              setSnackbarMessage('לחץ לחיצה ארוכה לביטול/שינוי אימות');
-                              setSnackbarVisible(true);
-                            }
-                          }}
-                          onLongPress={() => {
-                            if (canVerify && device.id) {
-                              handleVerifyDevice(device.id);
-                            }
-                          }}
-                          activeOpacity={0.7}
-                        >
-                          <Feather name="check-circle" size={14} color="#15803D" />
-                          <Text style={styles.verifiedPillText}>מאושר</Text>
-                        </TouchableOpacity>
-                      ) : (
-                        <TouchableOpacity 
-                          style={styles.pendingPill}
-                          onPress={() => {
-                            if (canVerify) {
-                              setSnackbarMessage('לחץ לחיצה ארוכה לאימות ציוד');
-                              setSnackbarVisible(true);
-                            }
-                          }}
-                          onLongPress={() => {
-                            if (canVerify && device.id) {
-                              handleVerifyDevice(device.id);
-                            }
-                          }}
-                          activeOpacity={0.7}
-                        >
-                          <Feather name="circle" size={14} color="#334155" />
-                          <Text style={styles.pendingPillText}>ממתין</Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </TouchableOpacity>
+                      {/* Left Column: Direct Tactile Verification Checkbox */}
+                      <View style={[
+                        styles.checkToggle,
+                        isVerified ? styles.checkToggleActive : styles.checkToggleInactive
+                      ]}>
+                        <MaterialCommunityIcons 
+                          name={isVerified ? "check-bold" : "checkbox-blank-outline"} 
+                          size={22} 
+                          color={isVerified ? "#FFFFFF" : "#94A3B8"} 
+                        />
+                      </View>
+                    </TouchableOpacity>
+                  </View>
                 );
               }
 
-              // MODE B: Clean Read-Only Inventory Card
+              // MODE B: Full Equipment Inventory Card
               return (
                 <View style={[
-                  styles.inventoryCard,
-                  fault === 'inspection' && styles.inventoryCardInspection,
-                  fault === 'replacement' && styles.inventoryCardReplacement
+                  styles.card,
+                  fault === 'inspection' && styles.cardInspection,
+                  fault === 'replacement' && styles.cardReplacement
                 ]}>
-                  {/* Right side in RTL: Category Icon + Equipment Info */}
-                  <View style={styles.deviceRightSide}>
-                    <View style={[
-                      styles.inventoryIconBox,
-                      fault === 'inspection' && styles.deviceIconBoxInspection,
-                      fault === 'replacement' && styles.deviceIconBoxReplacement
-                    ]}>
-                      {cat.isCommunity ? (
-                        <MaterialCommunityIcons 
-                          name={cat.iconName as any} 
-                          size={22} 
-                          color={fault === 'replacement' ? '#DC2626' : (fault === 'inspection' ? '#D97706' : '#1E6B3A')} 
-                        />
-                      ) : (
-                        <MaterialIcons 
-                          name={cat.iconName as any} 
-                          size={22} 
-                          color={fault === 'replacement' ? '#DC2626' : (fault === 'inspection' ? '#D97706' : '#1E6B3A')} 
-                        />
-                      )}
-                    </View>
-
-                    <View style={styles.deviceInfoColumn}>
-                      <View style={styles.deviceTitleRow}>
-                        <Text style={styles.inventoryTitleText}>
-                          {device.type}
-                        </Text>
-                        <View style={styles.inventoryCategoryBadge}>
-                          <Text style={styles.inventoryCategoryText}>{cat.tag}</Text>
-                        </View>
-                        {/* Fault Indicators */}
-                        {fault === 'inspection' && (
-                          <View style={styles.faultBadgeInspection}>
-                            <Feather name="alert-circle" size={11} color="#B45309" />
-                            <Text style={styles.faultBadgeTextInspection}>דרושה בדיקת קשר</Text>
-                          </View>
-                        )}
-                        {fault === 'replacement' && (
-                          <View style={styles.faultBadgeReplacement}>
-                            <Feather name="alert-octagon" size={11} color="#B91C1C" />
-                            <Text style={styles.faultBadgeTextReplacement}>דורש החלפה</Text>
-                          </View>
-                        )}
-                        {fault && (
-                          <TouchableOpacity 
-                            style={styles.markFixedBadge}
-                            onPress={() => confirmMarkFixed(device)}
-                            activeOpacity={0.7}
-                          >
-                            <Feather name="check" size={11} color="#15803D" />
-                            <Text style={styles.markFixedBadgeText}>סמן כתוקן</Text>
-                          </TouchableOpacity>
-                        )}
+                  <View style={styles.inventoryTopRow}>
+                    <View style={styles.cardInfoGroup}>
+                      <View style={styles.catIconContainer}>
+                        <MaterialIcons name={cat.iconName as any} size={22} color="#0F172A" />
                       </View>
-
-                      {/* Meta Tags: Tsadi & Location */}
-                      <View style={styles.inventoryMetaRow}>
-                        <View style={styles.tsadiTag}>
-                          <Feather name="hash" size={12} color="#0F172A" />
-                          <Text style={styles.tsadiTagText}>צ' {device.tsadiNumber}</Text>
+                      <View style={styles.cardDetails}>
+                        <View style={styles.cardTitleRow}>
+                          <Text style={styles.deviceTsadi}>צ׳ {device.tsadiNumber}</Text>
+                          <Text style={styles.deviceType}>{device.type}</Text>
                         </View>
-                        <View style={styles.locationTag}>
-                          <Feather name="map-pin" size={12} color="#0284C7" />
-                          <Text style={styles.locationTagText}>
-                            {device.location || 'ללא מיקום מוגדר'}
-                          </Text>
+                        <View style={styles.cardLocationRow}>
+                          <TouchableOpacity 
+                            style={styles.locationPill}
+                            onPress={() => setEditingDevice(device)}
+                            activeOpacity={0.8}
+                          >
+                            <Feather name="map-pin" size={12} color="#0284C7" className="feather-map-pin" />
+                            <Text style={styles.locationPillText}>
+                              {device.location || 'הגדר מיקום'}
+                            </Text>
+                          </TouchableOpacity>
+
+                          {fault === 'inspection' && (
+                            <View style={styles.badgeInspection}>
+                              <Text style={styles.badgeInspectionText}>בדיקת קשר</Text>
+                            </View>
+                          )}
+                          {fault === 'replacement' && (
+                            <View style={styles.badgeReplacement}>
+                              <Text style={styles.badgeReplacementText}>דורש החלפה</Text>
+                            </View>
+                          )}
                         </View>
                       </View>
                     </View>
                   </View>
 
-                  {/* Left side in RTL: Transfer + Fault + Quick edit location */}
-                  <View style={styles.deviceLeftSide}>
+                  {/* Consolidate Action Buttons */}
+                  <View style={styles.inventoryActionsRow}>
                     <TouchableOpacity 
-                      style={styles.inventoryTransferBtn}
+                      style={styles.actionBtnSecondary}
                       onPress={() => setTransferringDevice(device)}
                       activeOpacity={0.8}
                     >
-                      <Feather name="repeat" size={13} color="#15803D" />
-                      <Text style={styles.inventoryTransferBtnText}>העבר</Text>
+                      <Feather name="repeat" size={13} color="#0F172A" />
+                      <Text style={styles.actionBtnSecondaryText}>העבר פלוגה</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity 
                       style={[
-                        styles.inventoryFaultBtn,
-                        fault && styles.inventoryFaultBtnActive
+                        styles.actionBtnSecondary,
+                        fault ? styles.actionBtnWarning : {}
                       ]}
                       onPress={() => {
                         setFaultModalDevice(device);
@@ -1094,49 +812,30 @@ export default function KashpalReportScreen() {
                       <Feather 
                         name="alert-triangle" 
                         size={13} 
-                        color={fault === 'replacement' ? '#DC2626' : (fault === 'inspection' ? '#D97706' : '#334155')} 
+                        color={fault ? '#DC2626' : '#64748B'} 
                       />
                       <Text style={[
-                        styles.inventoryFaultBtnText,
-                        fault === 'replacement' ? { color: '#DC2626' } : (fault === 'inspection' ? { color: '#D97706' } : {})
+                        styles.actionBtnSecondaryText,
+                        fault ? { color: '#DC2626', fontWeight: '700' } : {}
                       ]}>
-                        תקלה
+                        {fault ? 'עדכן תקלה' : 'דווח תקלה'}
                       </Text>
                     </TouchableOpacity>
 
                     {fault && (
                       <TouchableOpacity 
-                        style={styles.inventoryFixedBtn}
+                        style={styles.actionBtnSuccess}
                         onPress={() => confirmMarkFixed(device)}
                         activeOpacity={0.8}
                       >
                         <Feather name="check" size={13} color="#15803D" />
-                        <Text style={styles.inventoryFixedBtnText}>סמן כתוקן</Text>
+                        <Text style={styles.actionBtnSuccessText}>תוקן</Text>
                       </TouchableOpacity>
                     )}
-
-                    <TouchableOpacity 
-                      style={styles.inventoryEditBtn}
-                      onPress={() => setEditingDevice(device)}
-                      activeOpacity={0.8}
-                    >
-                      <Feather name="edit-2" size={13} color="#334155" />
-                      <Text style={styles.inventoryEditBtnText}>מיקום</Text>
-                    </TouchableOpacity>
                   </View>
                 </View>
               );
             }}
-            ListFooterComponent={
-              <View style={styles.syncFooter}>
-                <Feather name="cloud" size={14} color="#334155" />
-                <Text style={styles.syncFooterText}>
-                  {activeTab === 'report' 
-                    ? (isMyPlatoonCompleted ? `דו"ח ${formattedDate} הושלם בהצלחה` : 'סנכרון מקומי פעיל') 
-                    : 'מאגר ציוד פלוגתי'} • עודכן אחרון {new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })} • סה״כ {devices.length} פריטים
-                </Text>
-              </View>
-            }
           />
 
           {/* Edit Location Modal */}
@@ -1158,7 +857,6 @@ export default function KashpalReportScreen() {
             onTransfer={() => {
               if (transferringDevice?.id) {
                 const removedId = transferringDevice.id;
-                // Instantly remove the transferred item from current Kashpal's list
                 setDevices(prev => prev.filter(d => d.id !== removedId));
               }
               setTransferringDevice(null);
@@ -1166,7 +864,7 @@ export default function KashpalReportScreen() {
             }}
           />
 
-          {/* Platoon-Specific Event Log / Timeline Modal */}
+          {/* Platoon Event Log Modal */}
           <DailySummaryModal
             visible={isTimelineVisible}
             onClose={() => setIsTimelineVisible(false)}
@@ -1186,9 +884,14 @@ export default function KashpalReportScreen() {
           />
         </View>
       ) : (
-        <View style={styles.platoonSelectorContainer}>
+        /* Platoon Selector Card */
+        <View style={styles.platoonSelectorWrap}>
           <View style={styles.selectorCard}>
-            <Text style={styles.selectorTitle}>בחר פלוגה לתצוגה</Text>
+            <View style={styles.selectorIconCircle}>
+              <MaterialIcons name="shield" size={32} color="#15803D" />
+            </View>
+            <Text style={styles.selectorTitle}>בחר פלוגה להתחלת עבודה</Text>
+            <Text style={styles.selectorSub}>בחר את הפלוגה שברצונך לאמת או לנהל את מצבת הציוד שלה</Text>
             <SearchableDropdown
               data={PLUGOT as unknown as string[]}
               value={selectedPlatoon || ''}
@@ -1199,49 +902,10 @@ export default function KashpalReportScreen() {
         </View>
       )}
 
-      {/* Bottom Navigation Bar */}
-      <View style={styles.bottomNav}>
-        {/* Child 1 (Rightmost): קשפ"ל (active) */}
-        <TouchableOpacity style={styles.navItem} activeOpacity={1}>
-          <MaterialCommunityIcons name="archive" size={22} color="#15803D" />
-          <Text style={[styles.navText, styles.navTextActive]}>קשפ"ל</Text>
-        </TouchableOpacity>
-
-        {/* Child 2: יומן אירועים (Event Log) */}
-        <TouchableOpacity 
-          style={styles.navItem} 
-          onPress={() => setIsTimelineVisible(true)}
-        >
-          <Feather name="clipboard" size={20} color="#334155" />
-          <Text style={styles.navText}>יומן אירועים</Text>
-        </TouchableOpacity>
-
-        {/* Child 3: דיווח תקלה */}
-        <TouchableOpacity 
-          style={styles.navItem} 
-          onPress={() => {
-            setFaultModalDevice(null);
-            setIsFaultModalVisible(true);
-          }}
-        >
-          <Feather name="alert-triangle" size={20} color="#334155" />
-          <Text style={styles.navText}>דיווח תקלה</Text>
-        </TouchableOpacity>
-
-        {/* Child 4 (Leftmost): כניסה / התנתקות */}
-        <TouchableOpacity 
-          style={styles.navItem} 
-          onPress={handleLogout}
-        >
-          <MaterialIcons name="badge" size={22} color="#334155" />
-          <Text style={styles.navText}>כניסה</Text>
-        </TouchableOpacity>
-      </View>
-
       <Snackbar
         visible={snackbarVisible}
         onDismiss={() => setSnackbarVisible(false)}
-        duration={2500}
+        duration={2200}
         message={snackbarMessage}
         actionLabel="הבנתי"
       />
@@ -1259,1082 +923,587 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 4,
-    paddingBottom: 24,
-    maxWidth: 480,
-    alignSelf: 'center',
-    width: '100%',
+    paddingBottom: 36,
   },
 
-  /* Header Top */
-  headerTop: {
+  /* 1. Tactical Command Header */
+  commandHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 8,
+    paddingVertical: 12,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
   },
-  headerTopRight: {
+  headerRightBlock: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
-  checkBadgeBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#1E6B3A',
+  unitBadge: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 5,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
-  headerTitleColumn: {
-    alignItems: 'flex-start',
+  unitBadgeText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#15803D',
   },
-  headerTopSubtitle: {
-    fontSize: 10,
-    color: '#334155',
-    textAlign: 'right',
-    fontWeight: '600',
-  },
-  headerTopTitle: {
-    fontSize: 17,
+  headerTitle: {
+    fontSize: 16,
     fontWeight: '800',
     color: '#0F172A',
-    textAlign: 'right',
   },
-  headerTopLeft: {
+  headerLeftBlock: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
-  iconBtnLogout: {
-    padding: 6,
-  },
-  userCircleBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#1E6B3A',
+  headerActionBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  /* Overview Card */
-  overviewCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
+    gap: 6,
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    padding: 16,
-    marginTop: 12,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
   },
-  overviewCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  overviewTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  overviewIconBox: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: '#DCFCE7',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  overviewTextCol: {
-    alignItems: 'flex-start',
-  },
-  overviewSub: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#334155',
-  },
-  overviewMainTitle: {
-    fontSize: 18,
-    fontWeight: '800',
+  headerActionBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
     color: '#0F172A',
   },
-  operationalStatusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  logoutBtn: {
+    padding: 7,
+    borderRadius: 8,
     backgroundColor: '#FEE2E2',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 9999,
-    gap: 6,
-  },
-  completedStatusPill: {
-    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 9999,
-    gap: 6,
-  },
-  opRedDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: '#EF4444',
-  },
-  opGreenDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: '#15803D',
-  },
-  opStatusText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#DC2626',
-  },
-  completedStatusText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#15803D',
   },
 
-  /* Segmented Control Tabs */
-  tabSwitcher: {
-    flexDirection: 'row',
-    backgroundColor: '#EEF2F6',
-    borderRadius: 12,
-    padding: 3,
-    marginBottom: 10,
-  },
-  tabButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    borderRadius: 9,
-  },
-  tabButtonActive: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  tabText: {
-    fontSize: 13,
-    color: '#334155',
-    fontWeight: '700',
-  },
-  tabTextActive: {
-    color: '#0F172A',
-    fontWeight: '800',
-  },
-
-  /* Inventory Status Bar */
-  overviewInfoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#F0F4FF',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  overviewInfoRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  overviewInfoText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  itemCountBadge: {
-    backgroundColor: '#DBEAFE',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 9999,
-  },
-  itemCountText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#1D4ED8',
-  },
-
-  /* Success Completed Card */
-  successCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    borderWidth: 1.5,
-    borderColor: '#DCFCE7',
-    padding: 24,
-    alignItems: 'center',
-    marginBottom: 16,
-    shadowColor: '#15803D',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-  successIconOuterCircle: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    backgroundColor: '#DCFCE7',
-    borderWidth: 4,
-    borderColor: '#F0FDF4',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  successIconInnerCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#15803D',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#15803D',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  successTitleText: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#0F172A',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  successSubtitleText: {
-    fontSize: 13,
-    color: '#334155',
-    textAlign: 'center',
-    lineHeight: 20,
-    paddingHorizontal: 12,
-    marginBottom: 20,
-  },
-  successDetailsCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    width: '100%',
-    marginBottom: 20,
-  },
-  successDetailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  successDetailText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#334155',
-  },
-  successDetailDivider: {
-    height: 1,
-    backgroundColor: '#E2E8F0',
-    marginVertical: 10,
-  },
-  viewInventoryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#DCFCE7',
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: '#86EFAC',
-    width: '100%',
-  },
-  viewInventoryBtnText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#15803D',
-  },
-
-  /* Incomplete Card Styles */
-  incompleteCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: 'rgba(217, 119, 6, 0.4)',
-    padding: 24,
-    alignItems: 'center',
-    marginBottom: 16,
-    shadowColor: '#D97706',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-  incompleteIconOuterCircle: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    backgroundColor: '#FEF3C7',
-    borderWidth: 4,
-    borderColor: '#FFFBEB',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  incompleteIconInnerCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#D97706',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#D97706',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  incompleteTitleText: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#92400E',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  incompleteSubtitleText: {
-    fontSize: 13,
-    color: '#78350F',
-    textAlign: 'center',
-    lineHeight: 20,
-    paddingHorizontal: 12,
-    marginBottom: 20,
-  },
-  incompleteDetailsCard: {
-    backgroundColor: '#FFFBEB',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#FDE68A',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    width: '100%',
-    marginBottom: 20,
-  },
-  incompleteViewInventoryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FEF3C7',
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: '#FCD34D',
-    width: '100%',
-    marginBottom: 10,
-  },
-  incompleteViewInventoryBtnText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#B45309',
-  },
-  reopenHintText: {
-    fontSize: 12,
-    color: '#64748B',
-    textAlign: 'center',
-    marginTop: 4,
-  },
-
-  /* Active Session Card */
-  sessionCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+  /* 2. Operational Status Banners */
+  activeSessionBanner: {
+    backgroundColor: '#0F172A',
+    borderRadius: 16,
     padding: 16,
+    marginTop: 14,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 4,
   },
-  sessionCardHeader: {
+  bannerTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 10,
   },
-  sessionTitleGroup: {
+  beaconIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 7,
   },
-  sessionRedDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#EF4444',
+  pulseDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: '#4ADE80',
   },
-  sessionTitleText: {
-    fontSize: 16,
+  bannerActiveText: {
+    fontSize: 15,
     fontWeight: '800',
-    color: '#0F172A',
+    color: '#F8FAFC',
   },
-  progressCounterGroup: {
-    alignItems: 'flex-start',
-  },
-  progressCounterLabel: {
-    fontSize: 10,
-    color: '#334155',
-    fontWeight: '700',
-  },
-  progressCounterValue: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  sessionInstructionRow: {
+  progressStats: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 4,
-    marginBottom: 12,
+    gap: 4,
   },
-  sessionInstructionText: {
-    fontSize: 12,
-    color: '#1E293B',
+  progressCountText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#4ADE80',
+  },
+  progressPercentText: {
+    fontSize: 13,
     fontWeight: '600',
+    color: '#94A3B8',
   },
-  progressBarTrack: {
-    height: 8,
-    backgroundColor: '#EEF2FF',
-    borderRadius: 4,
+  progressTrack: {
+    height: 6,
+    backgroundColor: '#1E293B',
+    borderRadius: 3,
     overflow: 'hidden',
     marginBottom: 14,
-    flexDirection: 'row',
   },
-  progressBarFill: {
+  progressFill: {
     height: '100%',
-    backgroundColor: '#15803D',
-    borderRadius: 4,
+    backgroundColor: '#22C55E',
+    borderRadius: 3,
   },
-  finishSessionBtn: {
+  submitReportBtn: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1E6B3A',
-    borderRadius: 14,
-    paddingVertical: 13,
+    alignItems: 'center',
     gap: 8,
+    backgroundColor: '#15803D',
+    borderRadius: 10,
+    paddingVertical: 12,
   },
-  finishSessionBtnText: {
+  submitReportBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
     color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '800',
   },
 
-  noSessionCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 20,
-    alignItems: 'center',
+  completedBanner: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1.5,
+    borderColor: '#BBF7D0',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 14,
     marginBottom: 12,
   },
-  noSessionTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0F172A',
+  completedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     marginBottom: 4,
   },
-  noSessionSub: {
+  completedTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  completedSubtitle: {
     fontSize: 12,
-    color: '#334155',
+    fontWeight: '500',
+    color: '#166534',
+    lineHeight: 16,
+  },
+
+  idleSessionBanner: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 14,
     marginBottom: 12,
+  },
+  idleTextGroup: {
+    flex: 1,
+  },
+  idleTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 2,
+  },
+  idleSub: {
+    fontSize: 12,
+    color: '#64748B',
   },
   startSessionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#15803D',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
     gap: 6,
+    backgroundColor: '#15803D',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   startSessionBtnText: {
     color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-
-  /* Section Header */
-  listSectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-    paddingHorizontal: 2,
-  },
-  listSectionTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  resetFilterBtn: {
-    paddingVertical: 2,
-    paddingHorizontal: 6,
-  },
-  resetFilterText: {
     fontSize: 12,
-    color: '#0284C7',
     fontWeight: '700',
   },
 
-  /* Mode B: Prominent Inventory Search Card */
-  inventorySearchCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 14,
+  /* 3. Segmented Switcher */
+  modeSwitcher: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 10,
+    padding: 3,
     marginBottom: 12,
-    shadowColor: '#000',
+  },
+  modeTab: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    borderRadius: 8,
+  },
+  modeTabActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
     elevation: 2,
   },
-  /* Search and Filter Section */
-  searchFilterSection: {
-    marginBottom: 12,
+  modeTabText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
   },
-  prominentSearchBar: {
+  modeTabTextActive: {
+    color: '#15803D',
+    fontWeight: '700',
+  },
+
+  /* 4. Search & Filters */
+  searchSection: {
+    marginBottom: 10,
+  },
+  searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
     paddingHorizontal: 12,
-    height: 44,
+    height: 42,
     marginBottom: 8,
   },
   searchIcon: {
     marginLeft: 6,
   },
-  clearSearchBtn: {
-    padding: 6,
-  },
-  prominentSearchInput: {
+  searchInput: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 13,
     color: '#0F172A',
     height: '100%',
-    fontWeight: '600',
   },
-  categoryChipsContainer: {
+  clearBtn: {
+    padding: 4,
+  },
+  locationChipsScroll: {
     flexDirection: 'row',
-    gap: 8,
-    paddingBottom: 2,
-    marginBottom: 2,
+    gap: 6,
+    paddingVertical: 2,
   },
-  chipButton: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 9999,
+  locChip: {
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
-  chipButtonActive: {
-    backgroundColor: '#1E6B3A',
-    borderColor: '#1E6B3A',
+  locChipActive: {
+    backgroundColor: '#1E293B',
+    borderColor: '#1E293B',
   },
-  chipText: {
+  locChipText: {
     fontSize: 12,
-    color: '#334155',
     fontWeight: '600',
+    color: '#475569',
   },
-  chipTextActive: {
+  locChipTextActive: {
     color: '#FFFFFF',
-    fontWeight: '800',
-  },
-  inventoryHeaderMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-  },
-  inventoryMetaCount: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#334155',
   },
 
-  /* Mode A: Device Cards */
-  deviceCard: {
+  filterFeedbackRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 8,
+    paddingHorizontal: 2,
+  },
+  filterFeedbackText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  resetFilterLink: {
+    padding: 2,
+  },
+  resetFilterLinkText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+
+  /* Device Cards */
+  card: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    borderRadius: 14,
     borderWidth: 1.5,
-    borderColor: '#F1F5F9',
+    borderColor: '#E2E8F0',
     padding: 12,
-    marginBottom: 9,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    marginBottom: 8,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
     shadowRadius: 4,
     elevation: 2,
   },
-  deviceCardVerified: {
-    borderColor: '#BBF7D0',
-    backgroundColor: '#FAFCFA',
+  cardVerified: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#86EFAC',
   },
-  deviceRightSide: {
+  cardInspection: {
+    borderColor: '#FCD34D',
+  },
+  cardReplacement: {
+    borderColor: '#FCA5A5',
+  },
+  cardInteractiveRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  cardInfoGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     flex: 1,
   },
-  deviceIconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  deviceIconBoxPending: {
-    backgroundColor: '#EEF2FF',
-  },
-  deviceIconBoxVerified: {
-    backgroundColor: '#DCFCE7',
-  },
-  deviceInfoColumn: {
-    flex: 1,
-    alignItems: 'flex-start',
-  },
-  deviceTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flexWrap: 'wrap',
-  },
-  deviceTitleText: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#0F172A',
-    textAlign: 'right',
-  },
-  deviceTitleVerified: {
-    color: '#15803D',
-  },
-  categoryBadge: {
-    backgroundColor: '#EEF2FF',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  categoryBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#4F46E5',
-  },
-  deviceSubtitleText: {
-    fontSize: 11,
-    color: '#334155',
-    textAlign: 'right',
-    marginTop: 2,
-    fontWeight: '500',
-  },
-  tsadiHighlightText: {
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  deviceLeftSide: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  editLocationBtn: {
-    padding: 6,
-    borderRadius: 8,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  verifiedPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#DCFCE7',
-    borderWidth: 1,
-    borderColor: '#86EFAC',
-    borderRadius: 9999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    gap: 4,
-  },
-  verifiedPillText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#15803D',
-  },
-  pendingPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F1F5F9',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 9999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    gap: 4,
-  },
-  pendingPillText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#334155',
-  },
-
-  /* Mode B: Clean Read-Only Inventory Card */
-  inventoryCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 12,
-    marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  inventoryIconBox: {
+  catIconContainer: {
     width: 44,
     height: 44,
     borderRadius: 12,
-    backgroundColor: '#DCFCE7',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  inventoryTitleText: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#0F172A',
-    textAlign: 'right',
-  },
-  inventoryCategoryBadge: {
     backgroundColor: '#F1F5F9',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  inventoryCategoryText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#334155',
-  },
-  inventoryMetaRow: {
-    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 8,
-    marginTop: 4,
-    flexWrap: 'wrap',
-  },
-  tsadiTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    gap: 3,
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
-  tsadiTagText: {
-    fontSize: 12,
+  catIconVerified: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#BBF7D0',
+  },
+  catIconPending: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
+  },
+  cardDetails: {
+    flex: 1,
+  },
+  cardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+    marginBottom: 4,
+  },
+  deviceTsadi: {
+    fontSize: 16,
     fontWeight: '800',
     color: '#0F172A',
   },
-  locationTag: {
+  deviceType: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  cardLocationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F0F9FF',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    gap: 3,
+    gap: 8,
   },
-  locationTagText: {
+  locationPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  locationPillText: {
     fontSize: 11,
     fontWeight: '600',
     color: '#0369A1',
   },
-  inventoryTransferBtn: {
+  badgeInspection: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 8,
-    backgroundColor: '#DCFCE7',
-    borderWidth: 1,
-    borderColor: '#86EFAC',
-  },
-  inventoryTransferBtnText: {
-    fontSize: 11,
-    color: '#15803D',
-    fontWeight: '700',
-  },
-  inventoryEditBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 8,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  inventoryEditBtnText: {
-    fontSize: 11,
-    color: '#334155',
-    fontWeight: '700',
-  },
-
-  /* Fault Status & Brigade Replacement Styles */
-  deviceCardInspection: {
-    borderColor: '#F59E0B',
-    backgroundColor: '#FFFDF5',
-    borderWidth: 1.5,
-  },
-  deviceCardReplacement: {
-    borderColor: '#EF4444',
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1.5,
-  },
-  deviceIconBoxInspection: {
+    gap: 3,
     backgroundColor: '#FEF3C7',
-  },
-  deviceIconBoxReplacement: {
-    backgroundColor: '#FEE2E2',
-  },
-  inventoryCardInspection: {
-    borderColor: '#F59E0B',
-    backgroundColor: '#FFFDF5',
-    borderWidth: 1.5,
-  },
-  inventoryCardReplacement: {
-    borderColor: '#EF4444',
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1.5,
-  },
-  faultBadgeInspection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
     borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#FDE68A',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
   },
-  faultBadgeTextInspection: {
-    fontSize: 10,
-    fontWeight: '800',
+  badgeInspectionText: {
+    fontSize: 11,
+    fontWeight: '700',
     color: '#B45309',
   },
-  faultBadgeReplacement: {
+  badgeReplacement: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3,
     backgroundColor: '#FEE2E2',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
     borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#FECACA',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
   },
-  faultBadgeTextReplacement: {
-    fontSize: 10,
-    fontWeight: '800',
+  badgeReplacementText: {
+    fontSize: 11,
+    fontWeight: '700',
     color: '#B91C1C',
   },
-  brigadeReplaceBtn: {
+
+  /* Tactile Verification Checkbox Toggle */
+  checkToggle: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+  },
+  checkToggleActive: {
+    backgroundColor: '#15803D',
+    borderColor: '#15803D',
+  },
+  checkToggleInactive: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#CBD5E1',
+  },
+
+  /* Inventory Card specifics */
+  inventoryTopRow: {
+    marginBottom: 10,
+  },
+  inventoryActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    paddingTop: 10,
+  },
+  actionBtnSecondary: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: '#DC2626',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 9999,
-    shadowColor: '#DC2626',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  brigadeReplaceBtnText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  inventoryFaultBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 8,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F1F5F9',
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
-  inventoryFaultBtnActive: {
-    backgroundColor: '#FEF3C7',
-    borderColor: '#FDE68A',
+  actionBtnSecondaryText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0F172A',
   },
-  inventoryFaultBtnText: {
-    fontSize: 11,
-    color: '#334155',
-    fontWeight: '700',
+  actionBtnWarning: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
   },
-  markFixedBadge: {
+  actionBtnSuccess: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     backgroundColor: '#DCFCE7',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#86EFAC',
-  },
-  markFixedBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#15803D',
-  },
-  inventoryFixedBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+    borderColor: '#BBF7D0',
     borderRadius: 8,
-    backgroundColor: '#F0FDF4',
-    borderWidth: 1,
-    borderColor: '#86EFAC',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
-  inventoryFixedBtnText: {
-    fontSize: 11,
-    color: '#15803D',
+  actionBtnSuccessText: {
+    fontSize: 12,
     fontWeight: '700',
+    color: '#15803D',
   },
 
-  /* Footer & Empty */
-  syncFooter: {
-    flexDirection: 'row',
+  /* Empty State */
+  emptyContainer: {
+    paddingVertical: 48,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 14,
   },
-  syncFooterText: {
-    fontSize: 11,
-    color: '#334155',
-    fontWeight: '500',
+  emptyTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#475569',
+    marginBottom: 4,
   },
-  emptyContainer: {
-    padding: 36,
-    alignItems: 'center',
-  },
-  emptyText: {
+  emptySub: {
     fontSize: 13,
-    color: '#334155',
-    textAlign: 'center',
-    lineHeight: 18,
-    fontWeight: '500',
+    color: '#94A3B8',
+    marginBottom: 12,
+  },
+  emptyResetBtn: {
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  emptyResetBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#15803D',
   },
 
-  /* Platoon Selector Fallback */
-  platoonSelectorContainer: {
+  /* Platoon Selector View */
+  platoonSelectorWrap: {
     flex: 1,
     justifyContent: 'center',
+    alignItems: 'center',
     padding: 20,
   },
   selectorCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
     padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    alignItems: 'center',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+  },
+  selectorIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#DCFCE7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   selectorTitle: {
     fontSize: 18,
     fontWeight: '800',
     color: '#0F172A',
-    marginBottom: 16,
+    marginBottom: 6,
     textAlign: 'center',
   },
-
-  /* Bottom Navigation */
-  bottomNav: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 10,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 10,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-  },
-  navItem: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    minWidth: 64,
-  },
-  navText: {
-    fontSize: 11,
-    color: '#334155',
-    fontWeight: '600',
-  },
-  navTextActive: {
-    color: '#15803D',
-    fontWeight: '800',
+  selectorSub: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 18,
   },
 });

@@ -13,10 +13,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Feather } from '@expo/vector-icons';
-import { theme } from '../../theme/theme';
+import { Feather, MaterialIcons } from '@expo/vector-icons';
 import Snackbar from '../../components/Snackbar';
 import SearchableDropdown from '../../components/SearchableDropdown';
+import OfflineBanner from '../../components/OfflineBanner';
 
 const REPORT_TYPES = [
   'תקלה טכנית',
@@ -78,7 +78,7 @@ export default function SubmitReportScreen() {
 
   const handleSubmit = async () => {
     if (!isValid) {
-      setSnackbarMessage('אנא מלא את כל שדות החובה');
+      setSnackbarMessage('אנא מלא את כל שדות החובה המסומנים בכוכבית');
       setSnackbarVisible(true);
       return;
     }
@@ -86,7 +86,7 @@ export default function SubmitReportScreen() {
     setIsLoading(true);
     
     // Simulate network request or firebase submission
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    await new Promise(resolve => setTimeout(resolve, 1200));
     
     setIsLoading(false);
     
@@ -96,88 +96,161 @@ export default function SubmitReportScreen() {
     setReportType('');
     await AsyncStorage.removeItem(DRAFT_STORAGE_KEY);
     
-    setSnackbarMessage('הדיווח נשלח בהצלחה!');
+    setSnackbarMessage('הדיווח נשלח בהצלחה ונרשם במערכת!');
     setSnackbarVisible(true);
     
-    // Optional: go back after delay
+    // Go back after delay
     setTimeout(() => {
       if (router.canGoBack()) {
         router.back();
       }
-    }, 2000);
+    }, 1800);
+  };
+
+  const handleClearDraft = async () => {
+    setTitle('');
+    setDescription('');
+    setReportType('');
+    await AsyncStorage.removeItem(DRAFT_STORAGE_KEY);
+    setSnackbarMessage('טיוטת הדיווח נמחקה');
+    setSnackbarVisible(true);
   };
 
   if (isInitializing) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
+        <ActivityIndicator size="large" color="#15803D" />
+        <Text style={styles.loadingText}>טוען טופס דיווח...</Text>
       </View>
     );
   }
 
+  const hasDraftContent = title.trim() || description.trim() || reportType.trim();
+
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      <OfflineBanner />
+
+      {/* 1. Tactical Command Header */}
+      <View style={styles.header}>
+        <View style={styles.headerRight}>
+          <View style={styles.unitBadge}>
+            <MaterialIcons name="shield" size={14} color="#15803D" />
+            <Text style={styles.unitBadgeText}>ערוץ דיווח גדודי</Text>
+          </View>
+          <Text style={styles.title}>הגשת דיווח חדש</Text>
+        </View>
+
+        <TouchableOpacity 
+          onPress={() => router.back()} 
+          style={styles.backButton}
+          activeOpacity={0.8}
+        >
+          <Feather name="arrow-right" size={18} color="#0F172A" />
+          <Text style={styles.backButtonText}>חזור</Text>
+        </TouchableOpacity>
+      </View>
+
       <KeyboardAvoidingView 
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Feather name="arrow-right" size={24} color={theme.colors.text} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>הגשת דיווח חדש</Text>
-          <View style={{ width: 40 }} />
-        </View>
+        <ScrollView 
+          style={styles.scrollBody} 
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingBottom: 32 }}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Status / Auto-save Indicator */}
+          <View style={styles.draftStatusRow}>
+            <View style={styles.autoSavePill}>
+              <View style={styles.liveDot} />
+              <Text style={styles.autoSaveText}>טיוטה נשמרת אוטומטית במכשיר</Text>
+            </View>
 
-        <ScrollView style={styles.formContainer} keyboardShouldPersistTaps="handled">
-          <Text style={styles.instruction}>טיוטה נשמרת אוטומטית למכשיר.</Text>
-          
-          {/* Report Type */}
-          <Text style={styles.label}>סוג הדיווח (חובה)</Text>
-          <SearchableDropdown
-            data={REPORT_TYPES}
-            value={reportType}
-            onSelect={setReportType}
-            placeholder="בחר סוג דיווח..."
-          />
-
-          {/* Title */}
-          <Text style={styles.label}>כותרת (חובה)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="נושא הדיווח"
-            placeholderTextColor={theme.colors.textMuted}
-            value={title}
-            onChangeText={setTitle}
-            textAlign="right"
-          />
-
-          {/* Description */}
-          <Text style={styles.label}>פירוט (חובה)</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            placeholder="הזן כאן את פרטי הדיווח..."
-            placeholderTextColor={theme.colors.textMuted}
-            value={description}
-            onChangeText={setDescription}
-            multiline
-            numberOfLines={6}
-            textAlign="right"
-            textAlignVertical="top"
-          />
-
-          <TouchableOpacity 
-            style={[styles.submitButton, (!isValid || isLoading) && styles.submitButtonDisabled]}
-            onPress={handleSubmit}
-            disabled={!isValid || isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator color="#FFF" />
-            ) : (
-              <Text style={styles.submitButtonText}>שלח דיווח</Text>
+            {hasDraftContent && (
+              <TouchableOpacity 
+                style={styles.clearDraftBtn}
+                onPress={handleClearDraft}
+                activeOpacity={0.7}
+              >
+                <Feather name="trash" size={12} color="#DC2626" />
+                <Text style={styles.clearDraftText}>נקה טיוטה</Text>
+              </TouchableOpacity>
             )}
-          </TouchableOpacity>
-          
+          </View>
+
+          {/* Form Card */}
+          <View style={styles.formCard}>
+            {/* Report Type */}
+            <View style={styles.inputGroup}>
+              <View style={styles.labelRow}>
+                <Text style={styles.requiredStar}>*</Text>
+                <Text style={styles.label}>סוג הדיווח</Text>
+              </View>
+              <SearchableDropdown
+                data={REPORT_TYPES}
+                value={reportType}
+                onSelect={setReportType}
+                placeholder="בחר סוג דיווח מבצעי..."
+              />
+            </View>
+
+            {/* Title */}
+            <View style={styles.inputGroup}>
+              <View style={styles.labelRow}>
+                <Text style={styles.requiredStar}>*</Text>
+                <Text style={styles.label}>נושא / כותרת הדיווח</Text>
+              </View>
+              <TextInput
+                style={styles.input}
+                placeholder="לדוגמה: תקלת קליטה ברכס מזרחי"
+                placeholderTextColor="#94A3B8"
+                value={title}
+                onChangeText={setTitle}
+                textAlign="right"
+              />
+            </View>
+
+            {/* Description */}
+            <View style={styles.inputGroup}>
+              <View style={styles.labelRow}>
+                <Text style={styles.requiredStar}>*</Text>
+                <Text style={styles.label}>פירוט מלא של האירוע או הבקשה</Text>
+              </View>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder="פרט מיקום, מכשירים מעורבים, תסמינים, ופעולות שבוצעו עד כה..."
+                placeholderTextColor="#94A3B8"
+                value={description}
+                onChangeText={setDescription}
+                multiline
+                numberOfLines={6}
+                textAlign="right"
+                textAlignVertical="top"
+              />
+            </View>
+
+            {/* Submit Button */}
+            <TouchableOpacity 
+              style={[styles.submitButton, (!isValid || isLoading) && styles.submitButtonDisabled]}
+              onPress={handleSubmit}
+              disabled={!isValid || isLoading}
+              activeOpacity={0.85}
+            >
+              {isLoading ? (
+                <View style={styles.loadingRow}>
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                  <Text style={styles.submitButtonText}>משדר דיווח למערכת...</Text>
+                </View>
+              ) : (
+                <View style={styles.submitContent}>
+                  <Feather name="send" size={18} color="#FFFFFF" />
+                  <Text style={styles.submitButtonText}>שדר דיווח למפקדה</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -193,77 +266,199 @@ export default function SubmitReportScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: '#F8FAFC',
   },
   center: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: theme.colors.background,
+    backgroundColor: '#F8FAFC',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '600',
   },
   header: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: theme.spacing.lg,
-    backgroundColor: theme.colors.surface,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    borderBottomColor: '#E2E8F0',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
   },
-  backButton: {
-    padding: theme.spacing.xs,
+  headerRight: {
+    alignItems: 'flex-end',
   },
-  headerTitle: {
+  unitBadge: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    marginBottom: 4,
+    gap: 4,
+  },
+  unitBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  title: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-  },
-  formContainer: {
-    flex: 1,
-    padding: theme.spacing.lg,
-  },
-  instruction: {
-    textAlign: 'center',
-    color: theme.colors.textMuted,
-    marginBottom: theme.spacing.lg,
-    fontSize: 14,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    marginBottom: theme.spacing.sm,
+    fontWeight: '800',
+    color: '#0F172A',
     textAlign: 'right',
   },
-  input: {
-    backgroundColor: theme.colors.surface,
+  backButton: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: theme.borderRadius.md,
-    padding: theme.spacing.md,
-    fontSize: 16,
-    color: theme.colors.text,
-    marginBottom: theme.spacing.lg,
+    borderColor: '#E2E8F0',
+    gap: 6,
+  },
+  backButtonText: {
+    fontSize: 13,
+    color: '#0F172A',
+    fontWeight: '700',
+  },
+  scrollBody: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  draftStatusRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  autoSavePill: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 6,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#15803D',
+  },
+  autoSaveText: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  clearDraftBtn: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    gap: 4,
+  },
+  clearDraftText: {
+    fontSize: 11,
+    color: '#DC2626',
+    fontWeight: '600',
+  },
+  formCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+  },
+  inputGroup: {
+    marginBottom: 16,
+  },
+  labelRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    marginBottom: 6,
+    gap: 4,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
+    textAlign: 'right',
+  },
+  requiredStar: {
+    color: '#DC2626',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  input: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: '#0F172A',
+    fontWeight: '600',
   },
   textArea: {
-    minHeight: 120,
+    minHeight: 130,
+    lineHeight: 22,
   },
   submitButton: {
-    backgroundColor: theme.colors.primary,
-    paddingVertical: theme.spacing.lg,
-    borderRadius: theme.borderRadius.md,
+    backgroundColor: '#15803D',
+    paddingVertical: 14,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: theme.spacing.lg,
-    marginBottom: 40,
-    ...(theme.elevation?.sm as object || {}),
+    marginTop: 8,
+    elevation: 2,
+    shadowColor: '#15803D',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   submitButtonDisabled: {
-    backgroundColor: theme.colors.textMuted,
+    backgroundColor: '#CBD5E1',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  submitContent: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 8,
+  },
+  loadingRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 8,
   },
   submitButtonText: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: 'bold',
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
   },
 });
