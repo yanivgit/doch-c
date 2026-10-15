@@ -8,19 +8,14 @@ import {
   ScrollView, 
   Animated 
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApp, UserRole } from '../context/AppContext';
 import { Feather, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
-import ReportFaultModal from '../components/ReportFaultModal';
 import PinCodeModal from '../components/modals/PinCodeModal';
-import { theme } from '../theme/theme';
 
 export default function RoleSelectionScreen() {
-  const router = useRouter();
   const { login } = useApp();
   const [showPinModal, setShowPinModal] = useState(false);
-  const [showReportFaultModal, setShowReportFaultModal] = useState(false);
   const [pin, setPin] = useState('');
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
@@ -160,24 +155,6 @@ export default function RoleSelectionScreen() {
               </View>
             </View>
           </TouchableOpacity>
-
-          {/* Direct Incident / Fault Action Tile */}
-          <TouchableOpacity 
-            style={styles.faultReportTile} 
-            activeOpacity={0.85} 
-            onPress={() => setShowReportFaultModal(true)}
-          >
-            <View style={styles.faultTileInner}>
-              <View style={styles.faultIconBox}>
-                <Feather name="alert-triangle" size={18} color="#B45309" />
-              </View>
-              <View style={styles.faultTextGroup}>
-                <Text style={styles.faultTileTitle}>דיווח תקלה במכשיר קשר</Text>
-                <Text style={styles.faultTileSub}>דיווח ישיר לקשר״ג ללא תהליך כניסה מלא</Text>
-              </View>
-              <Feather name="chevron-left" size={18} color="#B45309" />
-            </View>
-          </TouchableOpacity>
         </View>
 
         {/* Operational Terminal Footer */}
@@ -190,29 +167,6 @@ export default function RoleSelectionScreen() {
         </View>
       </ScrollView>
 
-      {/* Floating Tactical Bottom Navigation Bar */}
-      <View style={styles.bottomNav}>
-        <TouchableOpacity style={styles.navItem} onPress={() => handleRoleSelect('Kashpal')}>
-          <MaterialCommunityIcons name="archive-outline" size={22} color="#64748B" />
-          <Text style={styles.navText}>קשפ"ל</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.navItem} onPress={() => handleRoleSelect('Kashrag')}>
-          <Feather name="plus-circle" size={20} color="#64748B" />
-          <Text style={styles.navText}>הוספת ציוד</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.navItem} onPress={() => Alert.alert('ציר זמן', 'התחבר תחילה כדי לצפות בציר הזמן המבצעי')}>
-          <Feather name="clock" size={20} color="#64748B" />
-          <Text style={styles.navText}>ציר זמן</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={[styles.navItem, styles.navItemActive]} activeOpacity={1}>
-          <MaterialIcons name="badge" size={22} color="#15803D" />
-          <Text style={[styles.navText, styles.navTextActive]}>כניסה</Text>
-        </TouchableOpacity>
-      </View>
-
       {/* PIN Code Verification Modal */}
       <PinCodeModal
         visible={showPinModal}
@@ -220,12 +174,6 @@ export default function RoleSelectionScreen() {
         onChangePin={setPin}
         onSubmit={handlePinSubmit}
         onCancel={() => { setShowPinModal(false); setPin(''); }}
-      />
-
-      {/* Report Fault Modal */}
-      <ReportFaultModal
-        visible={showReportFaultModal}
-        onClose={() => setShowReportFaultModal(false)}
       />
     </SafeAreaView>
   );
@@ -239,7 +187,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 18,
-    paddingBottom: 100,
+    paddingBottom: 32,
   },
 
   /* Tactical Status Bar */
@@ -248,28 +196,32 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 12,
+    paddingHorizontal: 4,
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   securitySeal: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
   },
   securitySealText: {
-    fontSize: 12,
-    fontWeight: '700',
     color: '#15803D',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   onlineBeacon: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: 6,
   },
   beaconDot: {
     width: 8,
@@ -278,32 +230,33 @@ const styles = StyleSheet.create({
     backgroundColor: '#16A34A',
   },
   beaconText: {
-    fontSize: 12,
-    fontWeight: '600',
     color: '#475569',
+    fontSize: 11,
+    fontWeight: '600',
   },
 
   /* Hero Section */
   heroSection: {
     alignItems: 'center',
-    marginBottom: 24,
-    paddingTop: 8,
+    paddingVertical: 20,
   },
   heroSymbolContainer: {
-    marginBottom: 14,
+    marginBottom: 12,
   },
   heroSymbolOuter: {
-    width: 68,
-    height: 68,
-    borderRadius: 20,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: '#0F172A',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#15803D',
     shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 14,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 4,
   },
   heroMainTitle: {
     fontSize: 28,
@@ -316,44 +269,48 @@ const styles = StyleSheet.create({
   heroSubtitle: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#475569',
+    color: '#64748B',
     textAlign: 'center',
+    lineHeight: 20,
   },
   heroDivider: {
     width: 48,
     height: 3,
-    borderRadius: 2,
     backgroundColor: '#15803D',
+    borderRadius: 2,
     marginTop: 14,
   },
 
-  /* Console Section */
+  /* Console Selection Section */
   consoleSection: {
+    marginTop: 8,
     gap: 14,
   },
   consoleHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
-    paddingHorizontal: 2,
+    paddingHorizontal: 4,
+    marginBottom: 2,
   },
   consolePromptText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
-    color: '#1E293B',
+    color: '#475569',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   consoleScopeBadge: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     color: '#64748B',
     backgroundColor: '#F1F5F9',
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
 
-  /* Kashrag Card (Dark Tactical Command Center) */
+  /* Kashrag Card (Dark Tactical Command Deck) */
   kashragCard: {
     backgroundColor: '#0F172A',
     borderRadius: 20,
@@ -362,9 +319,9 @@ const styles = StyleSheet.create({
     borderColor: '#1E293B',
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.22,
+    shadowOpacity: 0.25,
     shadowRadius: 12,
-    elevation: 6,
+    elevation: 5,
   },
   cardHeaderRow: {
     flexDirection: 'row',
@@ -373,17 +330,17 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   kashragBadge: {
-    backgroundColor: '#1E293B',
+    backgroundColor: 'rgba(21, 128, 61, 0.25)',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: 'rgba(74, 222, 128, 0.3)',
   },
   kashragBadgeText: {
     color: '#4ADE80',
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
     letterSpacing: 0.4,
   },
   pinRequiredIndicator: {
@@ -394,7 +351,7 @@ const styles = StyleSheet.create({
   pinRequiredText: {
     color: '#94A3B8',
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   cardMainRow: {
     flexDirection: 'row',
@@ -405,14 +362,15 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 15,
-    backgroundColor: 'rgba(74, 222, 128, 0.12)',
+    backgroundColor: '#1E293B',
     borderWidth: 1,
-    borderColor: 'rgba(74, 222, 128, 0.3)',
+    borderColor: '#334155',
     justifyContent: 'center',
     alignItems: 'center',
   },
   cardTextContent: {
     flex: 1,
+    alignItems: 'flex-start',
   },
   kashragTitle: {
     fontSize: 22,
@@ -437,16 +395,16 @@ const styles = StyleSheet.create({
     borderColor: '#334155',
   },
 
-  /* Kashpal Card (Crisp Tactical Surface) */
+  /* Kashpal Card (Clean Tactical Field Unit) */
   kashpalCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
     padding: 18,
     borderWidth: 1.5,
     borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.06,
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 3,
   },
@@ -507,43 +465,6 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
 
-  /* Fault Report Tile */
-  faultReportTile: {
-    backgroundColor: '#FFFBEB',
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: '#FDE68A',
-    padding: 14,
-    marginTop: 4,
-  },
-  faultTileInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  faultIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#FEF3C7',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  faultTextGroup: {
-    flex: 1,
-  },
-  faultTileTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#92400E',
-    marginBottom: 2,
-  },
-  faultTileSub: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: '#B45309',
-  },
-
   /* Terminal Footer */
   terminalFooter: {
     marginTop: 32,
@@ -570,46 +491,5 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
     color: '#94A3B8',
-  },
-
-  /* Bottom Navigation */
-  bottomNav: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 68,
-    backgroundColor: '#FFFFFF',
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-    paddingBottom: 8,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 8,
-  },
-  navItem: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    height: '100%',
-  },
-  navItemActive: {
-    borderTopWidth: 2,
-    borderTopColor: '#15803D',
-  },
-  navText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#64748B',
-    marginTop: 4,
-  },
-  navTextActive: {
-    color: '#15803D',
-    fontWeight: '800',
   },
 });
