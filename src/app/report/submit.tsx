@@ -17,6 +17,9 @@ import { Feather, MaterialIcons } from '@expo/vector-icons';
 import Snackbar from '../../components/Snackbar';
 import SearchableDropdown from '../../components/SearchableDropdown';
 import OfflineBanner from '../../components/OfflineBanner';
+import { sanitizeInput, MAX_LENGTHS } from '../../utils/security';
+import { logEvent } from '../../firebase/api';
+import { useApp } from '../../context/AppContext';
 
 const REPORT_TYPES = [
   'תקלה טכנית',
@@ -30,6 +33,13 @@ const DRAFT_STORAGE_KEY = '@report_draft';
 
 export default function SubmitReportScreen() {
   const router = useRouter();
+  const { userRole } = useApp();
+
+  useEffect(() => {
+    if (!userRole) {
+      router.replace('/');
+    }
+  }, [userRole, router]);
   
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -77,34 +87,48 @@ export default function SubmitReportScreen() {
   const isValid = title.trim() !== '' && description.trim() !== '' && reportType.trim() !== '';
 
   const handleSubmit = async () => {
-    if (!isValid) {
+    const cleanTitle = sanitizeInput(title, MAX_LENGTHS.REPORT_TITLE);
+    const cleanDesc = sanitizeInput(description, MAX_LENGTHS.REPORT_DESCRIPTION);
+    const cleanType = sanitizeInput(reportType, 50);
+
+    if (!cleanTitle || !cleanDesc || !cleanType) {
       setSnackbarMessage('אנא מלא את כל שדות החובה המסומנים בכוכבית');
       setSnackbarVisible(true);
       return;
     }
 
     setIsLoading(true);
-    
-    // Simulate network request or firebase submission
-    await new Promise(resolve => setTimeout(resolve, 1200));
-    
-    setIsLoading(false);
-    
-    // Clear form & draft on success
-    setTitle('');
-    setDescription('');
-    setReportType('');
-    await AsyncStorage.removeItem(DRAFT_STORAGE_KEY);
-    
-    setSnackbarMessage('הדיווח נשלח בהצלחה ונרשם במערכת!');
-    setSnackbarVisible(true);
-    
-    // Go back after delay
-    setTimeout(() => {
-      if (router.canGoBack()) {
-        router.back();
-      }
-    }, 1800);
+    try {
+      await logEvent({
+        deviceId: 'GENERAL_REPORT',
+        tsadiNumber: 'N/A',
+        action: 'UPDATE',
+        user: 'משתמש',
+        details: `הוגש דיווח [${cleanType}]: "${cleanTitle}" - ${cleanDesc.slice(0, 150)}...`
+      });
+
+      // Clear form & draft on success
+      setTitle('');
+      setDescription('');
+      setReportType('');
+      await AsyncStorage.removeItem(DRAFT_STORAGE_KEY);
+      
+      setSnackbarMessage('הדיווח נשלח בהצלחה ונרשם במערכת!');
+      setSnackbarVisible(true);
+      
+      // Go back after delay
+      setTimeout(() => {
+        if (router.canGoBack()) {
+          router.back();
+        }
+      }, 1800);
+    } catch (e) {
+      console.error('Error submitting report:', e);
+      setSnackbarMessage('שגיאה בשליחת הדיווח. נסה שוב.');
+      setSnackbarVisible(true);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleClearDraft = async () => {

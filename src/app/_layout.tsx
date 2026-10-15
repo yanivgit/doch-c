@@ -26,7 +26,7 @@ function InitialLayout() {
     // The main report view will be under '/report'
     
     if (!userRole) {
-      // No role selected -> go to Role Selection (index.tsx)
+      // No role selected -> enforce redirect to Role Selection (index.tsx)
       if ((segments[0] as any) !== 'index' && (segments[0] as any) !== '') {
         router.replace('/');
       }
@@ -36,9 +36,13 @@ function InitialLayout() {
         router.replace('/cycle-selection');
       }
     } else {
-      // Role and Doh selected -> go to report view based on role
-      // Allow navigation to 'settings' as well
-      // Do NOT auto-redirect if we are in 'cycle-selection', let cycle-selection handle its own explicit navigation
+      // Role and Doh selected -> enforce strict RBAC boundaries
+      // Prevent Kashpal from accessing Kashrag command routes (Privilege Escalation Protection)
+      if (userRole === 'Kashpal' && segments[0] === 'report' && segments[1] === 'kashrag') {
+        router.replace('/report/kashpal');
+        return;
+      }
+
       if (segments[0] !== 'report' && segments[0] !== 'cycle-selection') {
         const rolePath = userRole.toLowerCase();
         router.replace(`/report/${rolePath}` as any);

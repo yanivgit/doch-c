@@ -1,0 +1,97 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions for data validation
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isOptionalString(data, field, maxLen) {
+      return !(field in data) || data[field] == null || (data[field] is string && data[field].size() <= maxLen);
+    }
+
+    // 1. doh_tzade (Operational cycles / inspections)
+    match /doh_tzade/{cycleId} {
+      allow get, list: if true;
+      allow create: if isValidString(request.resource.data.name, 1, 100)
+                    && request.resource.data.createdAt != null;
+      allow update: if isValidString(request.resource.data.name, 1, 100);
+      allow delete: if true;
+    }
+
+    // 2. devices (Battalion equipment registry)
+    match /devices/{deviceId} {
+      allow get, list: if true;
+      allow create: if isValidString(request.resource.data.tsadiNumber, 1, 30)
+                    && isValidString(request.resource.data.type, 1, 60)
+                    && isValidString(request.resource.data.assignment, 1, 60)
+                    && isOptionalString(request.resource.data, 'dohId', 100)
+                    && isOptionalString(request.resource.data, 'location', 100)
+                    && isOptionalString(request.resource.data, 'faultStatus', 30)
+                    && isOptionalString(request.resource.data, 'faultNotes', 500);
+
+      allow update: if isValidString(request.resource.data.tsadiNumber, 1, 30)
+                    && isValidString(request.resource.data.assignment, 1, 60)
+                    && isOptionalString(request.resource.data, 'location', 100)
+                    && isOptionalString(request.resource.data, 'faultStatus', 30)
+                    && isOptionalString(request.resource.data, 'faultNotes', 500);
+
+      allow delete: if true;
+    }
+
+    // 3. verificationSessions (Daily unit verification boards)
+    match /verificationSessions/{sessionId} {
+      allow get, list: if true;
+      allow create: if request.resource.data.dohId is string
+                    && request.resource.data.createdAt != null;
+      allow update: if true;
+      allow delete: if true;
+
+      // Subcollection: verifiedDevices (Real-time live item sync)
+      match /verifiedDevices/{verifiedDeviceId} {
+        allow get, list: if true;
+        allow create, update: if request.resource.data.verifiedAt != null
+                              && isOptionalString(request.resource.data, 'verifiedBy', 60);
+        allow delete: if true;
+      }
+    }
+
+    // 4. verificationHistory (Archived inspection logs)
+    match /verificationHistory/{historyId} {
+      allow get, list: if true;
+      allow create: if request.resource.data.dohId is string
+                    && request.resource.data.archivedAt != null;
+      allow update: if request.resource.data.dohId is string;
+      allow delete: if true;
+    }
+
+    // 5. logs (Operational Audit Trail - APPEND ONLY & IMMUTABLE)
+    match /logs/{logId} {
+      allow get, list: if true;
+      allow create: if isValidString(request.resource.data.action, 1, 30)
+                    && isValidString(request.resource.data.user, 1, 60)
+                    && request.resource.data.timestamp != null;
+      // Military audit trail cannot be modified or erased
+      allow update, delete: if false;
+    }
+
+    // 6. battalion_settings / metadata (Learned equipment types, platoons, locations)
+    match /battalion_settings/{metaId} {
+      allow get, list: if true;
+      allow create, update: if true;
+      allow delete: if false;
+    }
+
+    match /metadata/{metaId} {
+      allow get, list: if true;
+      allow create, update: if true;
+      allow delete: if false;
+    }
+
+    // Default fallback: deny all other paths
+    match /{document=**} {
+      allow read, write: false;
+    }
+  }
+}

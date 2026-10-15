@@ -1,6 +1,6 @@
 import { Timestamp } from 'firebase/firestore';
 
-export type LogAction = 'CREATE' | 'TRANSFER' | 'CHECKED' | 'DELETE' | 'UPDATE';
+export type LogAction = 'CREATE' | 'TRANSFER' | 'CHECKED' | 'DELETE' | 'UPDATE' | 'SECURITY_ALERT';
 
 export interface LogEvent {
   id?: string;

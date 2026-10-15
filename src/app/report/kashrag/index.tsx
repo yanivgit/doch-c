@@ -14,7 +14,7 @@ import {
   Animated 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useApp } from '../../../context/AppContext';
 import { 
   getAllDevices, 
@@ -23,6 +23,8 @@ import {
   deleteDevice, 
   VerificationSession, 
   archiveExpiredSessions, 
+  archiveSession,
+  checkAndAutoArchiveIfComplete,
   resetSession, 
   getDailyDocId, 
   startGlobalSession, 
@@ -47,7 +49,16 @@ import OfflineBanner from '../../../components/OfflineBanner';
 
 export default function KashragReportScreen() {
   const router = useRouter();
-  const { selectedDohId, selectedDohName, logout } = useApp();
+  const { userRole, selectedDohId, selectedDohName, logout } = useApp();
+
+  useEffect(() => {
+    if (!userRole) {
+      router.replace('/');
+    } else if (userRole !== 'Kashrag') {
+      router.replace('/report/kashpal');
+    }
+  }, [userRole, router]);
+
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
@@ -259,7 +270,7 @@ export default function KashragReportScreen() {
           const sessionData = { id: snap.id, ...snap.data() } as VerificationSession;
           
           if (sessionData.globalStatus === 'archived') {
-            setActiveSession(null);
+            setActiveSession(sessionData);
           } else if (sessionData.expiresAt.toMillis() < Date.now()) {
             if (!isArchivingRef.current) {
               isArchivingRef.current = true;
@@ -340,17 +351,32 @@ export default function KashragReportScreen() {
 
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
 
+  // Default is always closed when entering or returning to the screen
+  useFocusEffect(
+    useCallback(() => {
+      setExpandedSections(new Set());
+    }, [])
+  );
+
   const toggleSection = useCallback((key: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpandedSections(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
+      const next = new Set<string>();
+      if (!prev.has(key)) {
         next.add(key);
       }
       return next;
     });
+  }, []);
+
+  const handleTabChange = useCallback((tab: 'report' | 'inventory') => {
+    setActiveTab(tab);
+    setExpandedSections(new Set());
+  }, []);
+
+  const handleGroupByChange = useCallback((newGroup: 'platoons' | 'types') => {
+    setGroupBy(newGroup);
+    setExpandedSections(new Set());
   }, []);
 
   const sections = useMemo(() => {
@@ -511,6 +537,55 @@ export default function KashragReportScreen() {
 
   const totalBattalionDevices = devices.length;
   const overallPercentage = totalBattalionDevices > 0 ? (totalBattalionVerified / totalBattalionDevices) * 100 : 0;
+
+  const handleArchiveActiveSession = useCallback(async () => {
+    if (!selectedDohId || !activeSession) return;
+    const is100 = totalBattalionVerified === totalBattalionDevices && totalBattalionDevices > 0;
+    const confirmMessage = is100
+      ? `כל ${totalBattalionDevices} הפריטים בגדוד אומתו בהצלחה (100%)!\n\nהאם לנעול את הדו"ח ולהעבירו להיסטוריית הדוחות כהושלם?`
+      : `שים לב: אומתו ${totalBattalionVerified} מתוך ${totalBattalionDevices} פריטים בגדוד.\nנותרו ${totalBattalionDevices - totalBattalionVerified} פריטים שלא אומתו.\n\nהאם לנעול את הדו"ח ולהעבירו להיסטוריה עם חוסרים?`;
+
+    const performManualArchive = async () => {
+      try {
+        setLoading(true);
+        await archiveSession(activeSession, devices, {
+          completionNotes: is100 
+            ? 'הדו"ח הושלם וננעל על ידי הקשר"ג (100% אימות)'
+            : `הדו"ח ננעל על ידי הקשר"ג עם חוסרים (${totalBattalionVerified}/${totalBattalionDevices})`
+        });
+        if (Platform.OS === 'web') {
+          window.alert('הדו"ח היומי ננעל והועבר להיסטוריית הדוחות בהצלחה!');
+        } else {
+          Alert.alert('הצלחה', 'הדו"ח היומי ננעל והועבר להיסטוריית הדוחות בהצלחה!');
+        }
+      } catch (err) {
+        console.error('Error locking session to history:', err);
+        Alert.alert('שגיאה', 'נעילת הדו"ח נכשלה. נסה שוב.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(confirmMessage)) {
+        await performManualArchive();
+      }
+      return;
+    }
+
+    Alert.alert(
+      'נעילת דו"ח והעברה להיסטוריה',
+      confirmMessage,
+      [
+        { text: 'המשך אימות', style: 'cancel' },
+        { 
+          text: is100 ? 'נעל והעבר להיסטוריה' : 'נעל עם חוסרים', 
+          style: is100 ? 'default' : 'destructive', 
+          onPress: performManualArchive 
+        }
+      ]
+    );
+  }, [selectedDohId, activeSession, totalBattalionVerified, totalBattalionDevices, devices]);
 
   // Platoon status list inside Tab 1 (דו"ח)
   const renderStatusBars = () => {
@@ -794,7 +869,7 @@ export default function KashragReportScreen() {
         <View style={styles.tabSwitcher}>
           <TouchableOpacity 
             style={[styles.tabButton, activeTab === 'report' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('report')}
+            onPress={() => handleTabChange('report')}
             activeOpacity={0.85}
           >
             <MaterialCommunityIcons 
@@ -810,7 +885,7 @@ export default function KashragReportScreen() {
 
           <TouchableOpacity 
             style={[styles.tabButton, activeTab === 'inventory' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('inventory')}
+            onPress={() => handleTabChange('inventory')}
             activeOpacity={0.85}
           >
             <MaterialCommunityIcons 
@@ -840,7 +915,35 @@ export default function KashragReportScreen() {
             showsVerticalScrollIndicator={false}
           >
             {/* Battalion Operational Status Console */}
-            {activeSession && activeSession.globalStatus !== 'pending' && activeSession.globalStatus !== 'archived' ? (
+            {activeSession && activeSession.globalStatus === 'archived' ? (
+              <View style={styles.archivedSessionCard}>
+                <View style={styles.archivedIconCircle}>
+                  <MaterialCommunityIcons name="check-decagram" size={38} color="#15803D" />
+                </View>
+                <Text style={styles.archivedTitle}>הדו״ח היומי הושלם וננעל בהיסטוריה!</Text>
+                <Text style={styles.archivedSub}>
+                  כל הפלוגות סיימו את אימות הציוד והדו"ח נשמר בארכיון הגדודי כהושלם.
+                </Text>
+                <View style={styles.archivedActionsRow}>
+                  <TouchableOpacity 
+                    style={styles.viewHistoryBtn}
+                    onPress={() => setHistoryModalVisible(true)}
+                    activeOpacity={0.88}
+                  >
+                    <Feather name="file-text" size={16} color="#FFFFFF" />
+                    <Text style={styles.viewHistoryBtnText}>צפה בדו"ח בהיסטוריית הדוחות</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.reopenGlobalBtn}
+                    onPress={handleStartSession}
+                    activeOpacity={0.85}
+                  >
+                    <Feather name="play" size={15} color="#0F172A" />
+                    <Text style={styles.reopenGlobalBtnText}>פתח סבב חדש</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : activeSession && activeSession.globalStatus !== 'pending' ? (
               <View style={styles.activeSessionBanner}>
                 <View style={styles.sessionBannerTop}>
                   <View style={styles.beaconGroup}>
@@ -866,26 +969,31 @@ export default function KashragReportScreen() {
                 <Text style={styles.sectionHeaderTitle}>התקדמות אימות לפי פלוגות:</Text>
                 {renderStatusBars()}
 
-                {activeSession.globalStatus !== 'active' && (
-                  <View style={styles.sessionActionRow}>
-                    <TouchableOpacity 
-                      style={styles.startSessionBtn} 
-                      onPress={handleStartSession}
-                      activeOpacity={0.85}
-                    >
-                      <Feather name="play" size={16} color="#FFFFFF" />
-                      <Text style={styles.startSessionBtnText}>הפעל דו"ח לכל הפלוגות</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={styles.historyBtn} 
-                      onPress={() => setHistoryModalVisible(true)}
-                      activeOpacity={0.85}
-                    >
-                      <Feather name="clock" size={16} color="#0F172A" />
-                      <Text style={styles.historyBtnText}>היסטוריה</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
+                <View style={styles.sessionActionRow}>
+                  <TouchableOpacity 
+                    style={[
+                      styles.finalizeReportBtn,
+                      totalBattalionVerified === totalBattalionDevices && totalBattalionDevices > 0 && styles.finalizeReportBtn100
+                    ]} 
+                    onPress={handleArchiveActiveSession}
+                    activeOpacity={0.85}
+                  >
+                    <MaterialCommunityIcons name="lock-check" size={18} color="#FFFFFF" />
+                    <Text style={styles.finalizeReportBtnText}>
+                      {totalBattalionVerified === totalBattalionDevices && totalBattalionDevices > 0
+                        ? '🎉 סיום ונעילת דו"ח (100% הושלם)'
+                        : 'נעל דו"ח והעבר להיסטוריה'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.historyBtn} 
+                    onPress={() => setHistoryModalVisible(true)}
+                    activeOpacity={0.85}
+                  >
+                    <Feather name="clock" size={16} color="#0F172A" />
+                    <Text style={styles.historyBtnText}>היסטוריית דוחות</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ) : (
               <View style={styles.idleSessionCard}>
@@ -943,7 +1051,13 @@ export default function KashragReportScreen() {
                     onChangeText={setSearchQuery}
                   />
                   {searchQuery.length > 0 && (
-                    <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearSearchBtn}>
+                    <TouchableOpacity 
+                      onPress={() => {
+                        setSearchQuery('');
+                        setExpandedSections(new Set());
+                      }} 
+                      style={styles.clearSearchBtn}
+                    >
                       <Feather name="x" size={16} color="#64748B" />
                     </TouchableOpacity>
                   )}
@@ -952,7 +1066,7 @@ export default function KashragReportScreen() {
                 <View style={styles.groupingToggle}>
                   <TouchableOpacity 
                     style={[styles.toggleBtn, groupBy === 'types' && styles.toggleBtnActive]}
-                    onPress={() => setGroupBy('types')}
+                    onPress={() => handleGroupByChange('types')}
                     activeOpacity={0.8}
                   >
                     <Text style={[styles.toggleBtnText, groupBy === 'types' && styles.toggleBtnTextActive]}>
@@ -961,7 +1075,7 @@ export default function KashragReportScreen() {
                   </TouchableOpacity>
                   <TouchableOpacity 
                     style={[styles.toggleBtn, groupBy === 'platoons' && styles.toggleBtnActive]}
-                    onPress={() => setGroupBy('platoons')}
+                    onPress={() => handleGroupByChange('platoons')}
                     activeOpacity={0.8}
                   >
                     <Text style={[styles.toggleBtnText, groupBy === 'platoons' && styles.toggleBtnTextActive]}>
@@ -1502,6 +1616,107 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   historyBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  finalizeReportBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0284C7',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    gap: 6,
+  },
+  finalizeReportBtn100: {
+    backgroundColor: '#15803D',
+  },
+  finalizeReportBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+
+  /* Archived Session Card */
+  archivedSessionCard: {
+    backgroundColor: '#F0FDF4',
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: '#86EFAC',
+    padding: 28,
+    alignItems: 'center',
+    marginTop: 10,
+    marginBottom: 16,
+    shadowColor: '#15803D',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  archivedIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  archivedTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#15803D',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  archivedSub: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#334155',
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+    maxWidth: 320,
+  },
+  archivedActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+  },
+  viewHistoryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#15803D',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 8,
+    minWidth: 180,
+  },
+  viewHistoryBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  reopenGlobalBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    gap: 6,
+  },
+  reopenGlobalBtnText: {
     fontSize: 13,
     fontWeight: '700',
     color: '#0F172A',

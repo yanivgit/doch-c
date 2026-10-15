@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -9,11 +9,12 @@ import {
   Modal, 
   KeyboardAvoidingView, 
   Platform, 
-  ScrollView 
+  ScrollView, 
+  ActivityIndicator 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { addDevice } from '../firebase/api';
+import { Feather, MaterialIcons } from '@expo/vector-icons';
+import { addDevice, Device } from '../firebase/api';
 import { useApp } from '../context/AppContext';
 import SearchableDropdown from './SearchableDropdown';
 
@@ -23,34 +24,28 @@ interface AddDeviceModalProps {
   onAdded: () => void;
 }
 
-interface RecentItem {
-  id: string;
-  type: string;
-  tsadiNumber: string;
-  assignment: string;
-  location?: string;
-  isOperational?: boolean;
-}
-
-const QUICK_TAGS = [
-  'מ״ק 710',
-  'אמר״ל',
-  'סוללה חכמה',
-  'אנטנה שוט',
-  'ציר 62',
-  'מחשב 55ג',
-];
-
 export default function AddDeviceModal({ visible, onClose, onAdded }: AddDeviceModalProps) {
-  const { getAllEquipmentTypes, getAllPlatoons, getLocationsForPlatoon, learnNewOption, selectedDohId } = useApp();
+  const { 
+    selectedDohId, 
+    selectedDohName, 
+    getAllEquipmentTypes, 
+    getAllPlatoons, 
+    getLocationsForPlatoon, 
+    learnNewOption 
+  } = useApp();
   
   const [equipmentType, setEquipmentType] = useState('');
   const [tzadeNumber, setTzadeNumber] = useState('');
-  const [pluga, setPluga] = useState('מחלקת קשר');
+  const [pluga, setPluga] = useState('');
   const [location, setLocation] = useState('');
-  const [isOperational, setIsOperational] = useState(true);
   const [loading, setLoading] = useState(false);
   const [tsadiError, setTsadiError] = useState<string | null>(null);
+
+  // Keep track of devices added in this modal session
+  const [recentDevices, setRecentDevices] = useState<Device[]>([]);
+
+  // Ref to manually focus the tzade input after submission
+  const tzadeInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (visible) {
@@ -58,98 +53,61 @@ export default function AddDeviceModal({ visible, onClose, onAdded }: AddDeviceM
     }
   }, [visible]);
 
-  // Recent items state with initial tactical sample records matching screenshot
-  const [recentItems, setRecentItems] = useState<RecentItem[]>([
-    {
-      id: 'sample-1',
-      type: 'מ״ק 710 ראשי',
-      tsadiNumber: '742-9901',
-      assignment: 'מחלקת קשר',
-      location: 'מחסן קשר',
-      isOperational: true,
-    },
-    {
-      id: 'sample-2',
-      type: 'סוללה ליתיום 24V',
-      tsadiNumber: '104-5582',
-      assignment: 'פלוגה א׳',
-      location: 'עמדת טעינה',
-      isOperational: true,
-    },
-  ]);
-
-  const requiredFilledCount = (equipmentType.trim() ? 1 : 0) + (tzadeNumber.trim() ? 1 : 0);
-  const isValid = requiredFilledCount === 2;
-
-  const handleClear = () => {
-    setEquipmentType('');
-    setTzadeNumber('');
-    setPluga('מחלקת קשר');
-    setLocation('');
-    setIsOperational(true);
-    setTsadiError(null);
-  };
+  const isValid = equipmentType.trim() !== '' && tzadeNumber.trim() !== '';
 
   const handleSubmit = async () => {
     if (!isValid) {
-      Alert.alert('שגיאה', 'אנא מלא את כל שדות החובה: סוג ציוד ומספר צ\'');
+      Alert.alert('שדות חובה חסרים', 'אנא מלא סוג ציוד ומספר צ\' כדי להוסיף את המכשיר.');
       return;
     }
 
     setLoading(true);
     setTsadiError(null);
+
     try {
-      const faultStatus: 'replacement' | null = isOperational ? null : 'replacement';
       const newDeviceData = {
         type: equipmentType.trim(),
         tsadiNumber: tzadeNumber.trim(),
         assignment: pluga.trim() || 'מחלקת קשר',
         location: location.trim(),
-        dohId: selectedDohId || '',
-        faultStatus
+        dohId: selectedDohId || ''
       };
 
-      const docId = await addDevice(newDeviceData);
+      const id = await addDevice(newDeviceData);
       
-      // Learn new dynamic options
+      // Dynamic metadata learning
       learnNewOption('equipment', equipmentType.trim());
       learnNewOption('platoon', pluga.trim() || 'מחלקת קשר');
       if (location.trim()) {
         learnNewOption('location', location.trim(), pluga.trim() || 'מחלקת קשר');
       }
 
-      // Add to recent items (at the top)
-      setRecentItems(prev => [
-        {
-          id: docId || Date.now().toString(),
-          type: newDeviceData.type,
-          tsadiNumber: newDeviceData.tsadiNumber,
-          assignment: newDeviceData.assignment,
-          location: newDeviceData.location,
-          isOperational,
-        },
-        ...prev
-      ]);
-
-      // Reset form state variables (type, tsadi, location) to empty strings
-      setEquipmentType('');
+      // Add to local session list (at the top)
+      setRecentDevices(prev => [{ id, ...newDeviceData }, ...prev]);
+      
+      // Rapid entry workflow: clear Tsadi, Pluga, Location
       setTzadeNumber('');
+      setPluga('');
       setLocation('');
-      setPluga('מחלקת קשר');
-      setIsOperational(true);
       setTsadiError(null);
 
+      // Notify parent screen to update device counts
       onAdded();
-      Alert.alert('הצלחה', 'הציוד נוסף בהצלחה למאגר היחידתי');
+      
+      // Focus back on the input for the next item
+      setTimeout(() => {
+        tzadeInputRef.current?.focus();
+      }, 100);
+
     } catch (error: any) {
       console.error("Error adding device:", error);
-      const errorMessage = error?.message || 'שגיאה בהוספת הציוד למאגר.';
-      if (errorMessage.includes("קיים") || error?.message === 'DUPLICATE_TSADI') {
-        const duplicateMsg = errorMessage.includes("קיים") ? errorMessage : "מכשיר עם צ' זה כבר קיים במצבת הגדוד.";
-        setTsadiError(duplicateMsg);
-        Alert.alert('שגיאה', duplicateMsg);
+      const errorMessage = error?.message || '';
+      if (errorMessage.includes('קיים') || errorMessage === 'DUPLICATE_TSADI') {
+        const dupMsg = errorMessage.includes('קיים') ? errorMessage : "מכשיר עם צ' זה כבר קיים במצבת הגדוד.";
+        setTsadiError(dupMsg);
+        Alert.alert('שגיאה', dupMsg);
       } else {
-        Alert.alert('שגיאה', errorMessage);
+        Alert.alert('שגיאה', 'שגיאה בהוספת הציוד. נסה שוב.');
       }
     } finally {
       setLoading(false);
@@ -161,134 +119,92 @@ export default function AddDeviceModal({ visible, onClose, onAdded }: AddDeviceM
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
         
         {/* 1. Tactical Command Header */}
-        <View style={styles.headerTop}>
-          <View style={styles.headerTopRight}>
-            <View style={styles.checkBadgeBox}>
-              <MaterialCommunityIcons name="playlist-plus" size={22} color="#FFFFFF" />
+        <View style={styles.header}>
+          <View style={styles.headerRight}>
+            <View style={styles.badgeRow}>
+              <View style={styles.unitBadge}>
+                <MaterialIcons name="shield" size={14} color="#15803D" />
+                <Text style={styles.unitBadgeText}>
+                  {selectedDohName ? `מסדר: ${selectedDohName}` : 'הקמת מסדר גדודי'}
+                </Text>
+              </View>
+              <View style={styles.stepBadge}>
+                <Text style={styles.stepBadgeText}>קליטה מהירה</Text>
+              </View>
             </View>
-            <View style={styles.headerTitleColumn}>
-              <Text style={styles.headerTopTitle}>קליטת ציוד טקטי</Text>
-              <Text style={styles.headerTopSubtitle}>רישום פריט למצבת היחידה</Text>
-            </View>
+            <Text style={styles.title}>הוספת ציוד חדש</Text>
           </View>
 
-          <View style={styles.headerTopLeft}>
-            <TouchableOpacity style={styles.iconBtnClose} onPress={onClose}>
-              <Feather name="x" size={22} color="#0F172A" />
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity 
+            testID="close-add-device"
+            style={styles.closeButton}
+            onPress={onClose}
+            activeOpacity={0.8}
+            accessibilityLabel="סגור הוספת ציוד"
+          >
+            <Text style={styles.closeButtonText}>סגור</Text>
+            <Feather name="x" size={16} color="#0F172A" />
+          </TouchableOpacity>
         </View>
 
         <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <ScrollView 
-            style={styles.mainScroll} 
-            contentContainerStyle={styles.scrollContent}
+            style={styles.scrollBody} 
             keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled={true}
+            contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
           >
-            
-            {/* Top Operational Status Bar */}
-            <View style={styles.systemStatusBar}>
-              <View style={styles.systemStatusTag}>
-                <Feather name="check" size={11} color="#FFFFFF" />
-                <Text style={styles.systemStatusTagText}>אבטחת מערכת שלימה</Text>
-              </View>
-              <Text style={styles.systemStatusText}>גרסת 2.4 • מלא סנכרון</Text>
-            </View>
-
-            {/* 2. Main Form Card */}
+            {/* Rapid Add Card */}
             <View style={styles.formCard}>
-              
-              {/* Card Header Row */}
-              <View style={styles.cardHeaderRow}>
-                <View style={styles.cardTitleRight}>
-                  <View style={styles.formIconBox}>
-                    <MaterialCommunityIcons name="playlist-plus" size={24} color="#15803D" />
-                  </View>
-                  <View style={styles.cardTitleCol}>
-                    <Text style={styles.cardTitleText}>הוספת ציוד חדש</Text>
-                    <Text style={styles.cardSubtitleText}>רישום פריט למצבת היחידה</Text>
-                  </View>
+              <View style={styles.formCardHeader}>
+                <View style={styles.formHeaderIcon}>
+                  <Feather name="zap" size={18} color="#15803D" />
                 </View>
-
-                <TouchableOpacity testID="close-add-device" style={styles.closeCardBtn} onPress={onClose}>
-                  <Feather name="x" size={18} color="#1E293B" />
-                </TouchableOpacity>
+                <View style={styles.formHeaderTitles}>
+                  <Text style={styles.formTitle}>הוספה מהירה ורצופה</Text>
+                  <Text style={styles.formSubtitle}>הזן נתונים ולחץ "הוסף מכשיר למצבה" למעבר מיידי למכשיר הבא</Text>
+                </View>
               </View>
 
-              {/* Quick Tags Row */}
-              <View style={styles.quickTagsSection}>
-                <Text style={styles.quickTagsLabel}>מהיר:</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickTagsList}>
-                  {QUICK_TAGS.map((tag) => (
-                    <TouchableOpacity 
-                      key={tag} 
-                      style={[styles.quickTagPill, equipmentType === tag && styles.quickTagPillActive]}
-                      onPress={() => setEquipmentType(tag)}
-                    >
-                      <Text style={[styles.quickTagText, equipmentType === tag && styles.quickTagTextActive]}>
-                        {tag}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-
-              {/* Field 1: Equipment Type (חובה) */}
-              <View style={styles.fieldBlock}>
-                <View style={styles.fieldLabelRow}>
-                  <Text style={styles.fieldLabelText}>
-                    <Text style={styles.requiredStar}>* </Text>סוג ציוד
-                  </Text>
-                  <Text style={styles.fieldHintText}>קטלוג פעיל</Text>
+              {/* Field 1: Device Type */}
+              <View style={styles.inputGroup}>
+                <View style={styles.labelRow}>
+                  <Text style={styles.requiredStar}>*</Text>
+                  <Text style={styles.label}>סוג ציוד</Text>
                 </View>
-
                 <SearchableDropdown
                   data={getAllEquipmentTypes()}
                   value={equipmentType}
                   onSelect={setEquipmentType}
-                  placeholder="חפש ובחר סוג ציוד..."
+                  placeholder="חפש ובחר סוג ציוד (למשל מ.ק 710)..."
                   allowFreeText={true}
                 />
               </View>
 
-              {/* Field 2: Tsadi Number (חובה) */}
-              <View style={styles.fieldBlock}>
-                <View style={styles.fieldLabelRow}>
-                  <Text style={styles.fieldLabelText}>
-                    <Text style={styles.requiredStar}>* </Text>מספר צ׳ / מזהה
-                  </Text>
-                  <Text style={styles.fieldHintText}>סריקה אופטית זמינה</Text>
+              {/* Field 2: Tsadi Number */}
+              <View style={styles.inputGroup}>
+                <View style={styles.labelRow}>
+                  <Text style={styles.requiredStar}>*</Text>
+                  <Text style={styles.label}>מספר צ' / מזהה צבאי</Text>
                 </View>
-
-                <View style={[styles.inputContainerWithActions, tsadiError ? styles.inputErrorBorder : null]}>
-                  <View style={styles.inputRightSection}>
-                    <MaterialIcons name="keyboard" size={18} color="#64748B" style={styles.inputLeadingIcon} />
-                    <TextInput
-                      style={styles.textInputRTL}
-                      placeholder="צ׳ - (לדוגמה: 849-284)"
-                      placeholderTextColor="#94A3B8"
-                      value={tzadeNumber}
-                      onChangeText={(val) => {
-                        setTzadeNumber(val);
-                        if (tsadiError) setTsadiError(null);
-                      }}
-                      textAlign="right"
-                      keyboardType="default"
-                    />
-                  </View>
-
-                  <TouchableOpacity 
-                    style={styles.barcodeScanBtn} 
-                    onPress={() => Alert.alert('סריקה אופטית', 'מצלמת הסריקה מוכנה לקליטת ברקוד / QR')}
-                  >
-                    <MaterialCommunityIcons name="barcode-scan" size={18} color="#4F46E5" />
-                  </TouchableOpacity>
-                </View>
-
+                <TextInput
+                  ref={tzadeInputRef}
+                  style={[styles.input, tsadiError ? styles.inputError : null]}
+                  placeholder="הזן מספר צ' (למשל 94821)"
+                  placeholderTextColor="#94A3B8"
+                  value={tzadeNumber}
+                  onChangeText={(val) => {
+                    setTzadeNumber(val);
+                    if (tsadiError) setTsadiError(null);
+                  }}
+                  keyboardType="default"
+                  onSubmitEditing={handleSubmit}
+                  returnKeyType="done"
+                />
                 {tsadiError ? (
                   <View style={styles.errorRow}>
                     <Feather name="alert-circle" size={13} color="#DC2626" />
@@ -297,146 +213,110 @@ export default function AddDeviceModal({ visible, onClose, onAdded }: AddDeviceM
                 ) : null}
               </View>
 
-              {/* Field 3: Platoon Assignment (שיוך) */}
-              <View style={styles.fieldBlock}>
-                <View style={styles.fieldLabelRow}>
-                  <Text style={styles.fieldLabelText}>שיוך לפלוגה / מחלקה</Text>
-                  <Text style={styles.fieldHintText}>ברירת מחדל: מחלקת קשר</Text>
+              {/* Field 3: Platoon Assignment */}
+              <View style={styles.inputGroup}>
+                <View style={styles.labelRow}>
+                  <Text style={styles.optionalTag}>ברירת מחדל: מחלקת קשר</Text>
+                  <Text style={styles.label}>שיוך לפלוגה</Text>
                 </View>
-
                 <SearchableDropdown
                   data={getAllPlatoons()}
                   value={pluga}
-                  onSelect={(newPlatoon) => {
-                    setPluga(newPlatoon);
-                    setLocation('');
-                  }}
-                  placeholder="מחלקת קשר (ברירת מחדל)"
+                  onSelect={setPluga}
+                  placeholder="בחר פלוגה (אופציונלי)..."
                 />
               </View>
 
-              {/* Field 4: Location / Role (מיקום) */}
-              <View style={styles.fieldBlock}>
-                <View style={styles.fieldLabelRow}>
-                  <Text style={styles.fieldLabelText}>מיקום / תפקיד</Text>
-                  <Text style={styles.fieldHintText}>אופציונלי</Text>
+              {/* Field 4: Location / Vehicle */}
+              <View style={styles.inputGroup}>
+                <View style={styles.labelRow}>
+                  <Text style={styles.optionalTag}>אופציונלי</Text>
+                  <Text style={styles.label}>מיקום / כלי / בעל תפקיד</Text>
                 </View>
-
-                <View style={styles.inputContainerSingle}>
-                  <Feather name="map-pin" size={18} color="#64748B" style={styles.inputLeadingIcon} />
-                  <TextInput
-                    style={styles.textInputRTL}
-                    placeholder="בחר או הקלד מיקום (למשל: נגמ״ש פיקוד, מדף 4)"
-                    placeholderTextColor="#94A3B8"
-                    value={location}
-                    onChangeText={setLocation}
-                    textAlign="right"
-                  />
-                </View>
+                <SearchableDropdown
+                  data={getLocationsForPlatoon(pluga.trim() || 'מחלקת קשר')}
+                  value={location}
+                  onSelect={setLocation}
+                  placeholder='בחר או הקלד מיקום (למשל האמר מ"פ)...'
+                  allowFreeText={true}
+                />
               </View>
 
-              {/* Initial Status Checkbox */}
+              {/* Rapid Add Submit Button */}
               <TouchableOpacity 
-                style={[styles.statusCheckboxCard, !isOperational && styles.statusCheckboxCardFaulty]}
-                onPress={() => setIsOperational(!isOperational)}
-                activeOpacity={0.8}
-              >
-                <View style={styles.statusCheckboxRight}>
-                  <MaterialCommunityIcons 
-                    name={isOperational ? "shield-check-outline" : "alert-octagon-outline"} 
-                    size={22} 
-                    color={isOperational ? "#15803D" : "#DC2626"} 
-                  />
-                  <View style={styles.statusCheckboxTexts}>
-                    <Text style={[styles.statusCheckboxTitle, !isOperational && { color: '#B91C1C' }]}>
-                      {isOperational ? 'מצב ראשוני: תקין ומוכן לפעילות' : 'מצב ראשוני: תקול (דורש החלפה)'}
-                    </Text>
-                    <Text style={styles.statusCheckboxSub}>
-                      {isOperational ? 'מסומן כציוד זמין ותקין לשימוש' : 'יסומן באדום כציוד הדורש החלפה'}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={[styles.customCheckbox, isOperational && styles.customCheckboxActive, !isOperational && styles.customCheckboxFaulty]}>
-                  {isOperational ? (
-                    <Feather name="check" size={14} color="#FFFFFF" />
-                  ) : (
-                    <Feather name="x" size={14} color="#DC2626" />
-                  )}
-                </View>
-              </TouchableOpacity>
-
-              {/* Info Validation Banner */}
-              <View style={styles.infoValidationBanner}>
-                <View style={styles.infoValidationRight}>
-                  <Feather name="info" size={15} color="#4F46E5" />
-                  <Text style={styles.infoValidationText}>
-                    מלא את שדות החובה כדי לאפשר רישום
-                  </Text>
-                </View>
-                <View style={[styles.counterPill, isValid && styles.counterPillComplete]}>
-                  <Text style={[styles.counterPillText, isValid && styles.counterPillTextComplete]}>
-                    {requiredFilledCount}/2 חובה
-                  </Text>
-                </View>
-              </View>
-
-              {/* Main Submit Button */}
-              <TouchableOpacity 
-                style={[styles.submitButton, (!isValid || loading) && styles.submitButtonDisabled]}
+                style={[styles.addButton, (!isValid || loading) && styles.disabledButton]} 
                 onPress={handleSubmit}
                 disabled={!isValid || loading}
                 activeOpacity={0.85}
               >
-                <MaterialCommunityIcons name="check-circle-outline" size={20} color="#FFFFFF" />
-                <Text style={styles.submitButtonText}>
-                  {loading ? 'רושם במערכת...' : 'הוסף ציוד'}
-                </Text>
+                {loading ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <View style={styles.addButtonContent}>
+                    <Feather name="plus-circle" size={18} color="#FFFFFF" />
+                    <Text style={styles.addButtonText}>הוסף מכשיר למצבה</Text>
+                  </View>
+                )}
               </TouchableOpacity>
-
-              {/* Clear Fields Text Button */}
-              <TouchableOpacity style={styles.clearBtn} onPress={handleClear}>
-                <Text style={styles.clearBtnText}>נקה שדות</Text>
-              </TouchableOpacity>
-
             </View>
 
-            {/* 3. Recent Items Section */}
+            {/* Recently Added Section */}
             <View style={styles.recentSection}>
-              <View style={styles.recentHeaderRow}>
-                <View style={styles.recentHeaderRight}>
-                  <MaterialCommunityIcons name="history" size={20} color="#0284C7" />
-                  <Text style={styles.recentHeaderTitle}>פריטים שהוזנו לאחרונה</Text>
+              <View style={styles.recentHeader}>
+                <View style={styles.recentCountBadge}>
+                  <Text style={styles.recentCountText}>{recentDevices.length}</Text>
                 </View>
-                <Text style={styles.recentHeaderSubtitle}>אפשרות גיבוי</Text>
+                <Text style={styles.recentTitle}>מכשירים שנוספו בסשן זה:</Text>
               </View>
 
-              {recentItems.map((item) => (
-                <View key={item.id || item.tsadiNumber} style={styles.recentCard}>
-                  <View style={styles.recentCardRight}>
-                    <View style={styles.recentCardIconBox}>
-                      <MaterialCommunityIcons 
-                        name={item.type.includes('סוללה') ? 'battery-charging-60' : 'broadcast'} 
-                        size={20} 
-                        color="#4F46E5" 
-                      />
-                    </View>
-                    <View style={styles.recentCardTexts}>
-                      <Text style={styles.recentItemTitle}>{item.type}</Text>
-                      <Text style={styles.recentItemSub}>
-                        {item.assignment} • SN: {item.tsadiNumber}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.okBadge}>
-                    <Text style={styles.okBadgeText}>תקין</Text>
-                  </View>
+              {recentDevices.length === 0 ? (
+                <View style={styles.emptyRecentBox}>
+                  <Feather name="inbox" size={28} color="#94A3B8" />
+                  <Text style={styles.emptyRecentText}>טרם נוספו מכשירים בסשן זה</Text>
+                  <Text style={styles.emptyRecentSub}>הזן את פרטי המכשיר בטופס למעלה</Text>
                 </View>
-              ))}
-            </View>
+              ) : (
+                <View style={styles.recentList}>
+                  {recentDevices.slice(0, 15).map((device) => (
+                    <View key={device.id || device.tsadiNumber} style={styles.recentItem}>
+                      <View style={styles.recentCheckCircle}>
+                        <Feather name="check" size={14} color="#15803D" />
+                      </View>
+                      <View style={styles.recentInfo}>
+                        <View style={styles.recentInfoTop}>
+                          <Text style={styles.recentType}>{device.type}</Text>
+                          <View style={styles.recentTsadiBadge}>
+                            <Text style={styles.recentTsadiText}>צ׳ {device.tsadiNumber}</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.recentAssignment}>
+                          {device.assignment}{device.location ? ` • ${device.location}` : ''}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
 
+                  {recentDevices.length > 15 && (
+                    <Text style={styles.moreText}>
+                      ועוד {recentDevices.length - 15} מכשירים נוספים שנשמרו בהצלחה
+                    </Text>
+                  )}
+                </View>
+              )}
+            </View>
           </ScrollView>
+
+          {/* Tactical Footer Action Bar */}
+          <View style={styles.footer}>
+            <TouchableOpacity 
+              style={styles.finishButton} 
+              onPress={onClose}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.finishButtonText}>סיום וחזרה ללוח הבקרה</Text>
+              <Feather name="arrow-left" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+            </TouchableOpacity>
+          </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
@@ -448,528 +328,351 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8FAFC',
   },
-  mainScroll: {
+  header: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+  },
+  headerRight: {
+    alignItems: 'flex-end',
+  },
+  badgeRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  unitBadge: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    gap: 4,
+  },
+  unitBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  stepBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  stepBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'right',
+  },
+  closeButton: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 6,
+  },
+  closeButtonText: {
+    fontSize: 13,
+    color: '#0F172A',
+    fontWeight: '700',
+  },
+  scrollBody: {
     flex: 1,
   },
   scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 4,
+    paddingTop: 16,
     paddingBottom: 24,
-    maxWidth: 480,
-    alignSelf: 'center',
+    maxWidth: 680,
     width: '100%',
+    alignSelf: 'center',
   },
-
-  /* Header Top */
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 8,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  headerTopRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  checkBadgeBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#1E6B3A',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitleColumn: {
-    alignItems: 'flex-start',
-  },
-  headerTopSubtitle: {
-    fontSize: 10,
-    color: '#64748B',
-    textAlign: 'right',
-    fontWeight: '500',
-  },
-  headerTopTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: '#0F172A',
-    textAlign: 'right',
-  },
-  headerTopLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  iconBtnClose: {
-    padding: 6,
-  },
-  userCircleBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#1E6B3A',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  /* System Status Bar */
-  systemStatusBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 10,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    marginTop: 8,
-    marginBottom: 8,
-  },
-  systemStatusTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#15803D',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    gap: 4,
-  },
-  systemStatusTagText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  systemStatusText: {
-    fontSize: 10,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-
-  /* Main Form Card */
   formCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     padding: 16,
-    marginBottom: 14,
+    marginBottom: 16,
+    elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
   },
-  cardHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  formCardHeader: {
+    flexDirection: 'row-reverse',
     alignItems: 'center',
+    paddingBottom: 14,
     marginBottom: 14,
-  },
-  cardTitleRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
     gap: 10,
   },
-  formIconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+  formHeaderIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: '#DCFCE7',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cardTitleCol: {
-    alignItems: 'flex-start',
+  formHeaderTitles: {
+    flex: 1,
+    alignItems: 'flex-end',
   },
-  cardTitleText: {
-    fontSize: 17,
+  formTitle: {
+    fontSize: 16,
     fontWeight: '800',
     color: '#0F172A',
+    textAlign: 'right',
   },
-  cardSubtitleText: {
-    fontSize: 11,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  closeCardBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: '#EEF2FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  /* Quick Tags */
-  quickTagsSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 14,
-    paddingVertical: 2,
-  },
-  quickTagsLabel: {
+  formSubtitle: {
     fontSize: 12,
-    fontWeight: '700',
     color: '#64748B',
+    marginTop: 2,
+    textAlign: 'right',
   },
-  quickTagsList: {
-    flexDirection: 'row',
-    gap: 6,
+  inputGroup: {
+    marginBottom: 14,
   },
-  quickTagPill: {
-    backgroundColor: '#EEF2FF',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 9999,
-  },
-  quickTagPillActive: {
-    backgroundColor: '#1E6B3A',
-  },
-  quickTagText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#4F46E5',
-  },
-  quickTagTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-
-  /* Field Blocks */
-  fieldBlock: {
-    marginBottom: 12,
-  },
-  fieldLabelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  labelRow: {
+    flexDirection: 'row-reverse',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 6,
   },
-  fieldLabelText: {
+  label: {
     fontSize: 13,
-    fontWeight: '800',
-    color: '#0F172A',
+    fontWeight: '700',
+    color: '#334155',
+    textAlign: 'right',
   },
   requiredStar: {
     color: '#DC2626',
-    fontWeight: '900',
+    fontWeight: '700',
+    fontSize: 14,
+    marginRight: 4,
   },
-  fieldHintText: {
+  optionalTag: {
     fontSize: 11,
-    color: '#334155',
-    fontWeight: '600',
+    color: '#94A3B8',
+    fontWeight: '500',
   },
-
-  /* Inputs */
-  inputContainerWithActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  input: {
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    height: 48,
-    marginBottom: 4,
+    borderColor: '#CBD5E1',
+    color: '#0F172A',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 16,
+    textAlign: 'right',
+    fontWeight: '600',
   },
-  inputErrorBorder: {
+  inputError: {
     borderColor: '#EF4444',
     backgroundColor: '#FEF2F2',
   },
   errorRow: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
-    marginBottom: 6,
-    paddingHorizontal: 4,
+    gap: 5,
+    marginTop: 6,
   },
   errorText: {
     fontSize: 12,
-    fontWeight: '700',
     color: '#DC2626',
-    textAlign: 'right',
-  },
-  inputRightSection: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  inputContainerSingle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    height: 48,
-    gap: 8,
-    marginBottom: 4,
-  },
-  inputLeadingIcon: {
-    marginLeft: 4,
-  },
-  textInputRTL: {
-    flex: 1,
-    fontSize: 14,
-    color: '#0F172A',
-    height: '100%',
-  },
-  barcodeScanBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: '#EEF2FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  /* Status Checkbox */
-  statusCheckboxCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#EEF2FF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E0E7FE',
-    padding: 12,
-    marginTop: 4,
-    marginBottom: 10,
-  },
-  statusCheckboxCardFaulty: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#FECACA',
-  },
-  statusCheckboxRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flex: 1,
-  },
-  statusCheckboxTexts: {
-    alignItems: 'flex-start',
-  },
-  statusCheckboxTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  statusCheckboxSub: {
-    fontSize: 11,
-    color: '#334155',
-    fontWeight: '500',
-    marginTop: 1,
-  },
-  customCheckbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: '#CBD5E1',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  customCheckboxActive: {
-    backgroundColor: '#15803D',
-    borderColor: '#15803D',
-  },
-  customCheckboxFaulty: {
-    backgroundColor: '#FEE2E2',
-    borderColor: '#DC2626',
-  },
-
-  /* Info Validation */
-  infoValidationBanner: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#EEF2FF',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    marginBottom: 14,
-  },
-  infoValidationRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  infoValidationText: {
-    fontSize: 11,
-    color: '#4338CA',
     fontWeight: '600',
   },
-  counterPill: {
-    backgroundColor: '#E0E7FF',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 9999,
-  },
-  counterPillComplete: {
-    backgroundColor: '#DCFCE7',
-  },
-  counterPillText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#4338CA',
-  },
-  counterPillTextComplete: {
-    color: '#15803D',
-  },
-
-  /* Submit Button */
-  submitButton: {
-    flexDirection: 'row',
+  addButton: {
+    backgroundColor: '#15803D',
+    paddingVertical: 14,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1E6B3A',
-    borderRadius: 14,
-    paddingVertical: 14,
-    gap: 8,
-    shadowColor: '#1E6B3A',
+    marginTop: 6,
+    elevation: 2,
+    shadowColor: '#15803D',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
-    shadowRadius: 5,
-    elevation: 3,
+    shadowRadius: 4,
   },
-  submitButtonDisabled: {
-    backgroundColor: '#A7F3D0',
+  disabledButton: {
+    backgroundColor: '#CBD5E1',
     shadowOpacity: 0,
     elevation: 0,
   },
-  submitButtonText: {
+  addButtonContent: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 8,
+  },
+  addButtonText: {
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '800',
-    color: '#FFFFFF',
   },
-  clearBtn: {
-    alignItems: 'center',
-    paddingVertical: 8,
-    marginTop: 4,
-  },
-  clearBtnText: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '700',
-  },
-
-  /* Recent Items Section */
   recentSection: {
-    marginBottom: 16,
-  },
-  recentHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-    paddingHorizontal: 2,
-  },
-  recentHeaderRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  recentHeaderTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  recentHeaderSubtitle: {
-    fontSize: 11,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  recentCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    padding: 12,
-    marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 3,
-    elevation: 1,
+    padding: 16,
+    marginBottom: 20,
   },
-  recentCardRight: {
-    flexDirection: 'row',
+  recentHeader: {
+    flexDirection: 'row-reverse',
     alignItems: 'center',
-    gap: 10,
-    flex: 1,
+    justifyContent: 'space-between',
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    marginBottom: 12,
   },
-  recentCardIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#EEF2FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  recentCardTexts: {
-    alignItems: 'flex-start',
-  },
-  recentItemTitle: {
+  recentTitle: {
     fontSize: 14,
     fontWeight: '800',
     color: '#0F172A',
   },
-  recentItemSub: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  okBadge: {
+  recentCountBadge: {
     backgroundColor: '#DCFCE7',
-    borderWidth: 1,
-    borderColor: '#86EFAC',
-    borderRadius: 9999,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
   },
-  okBadgeText: {
-    fontSize: 11,
+  recentCountText: {
+    fontSize: 12,
     fontWeight: '800',
     color: '#15803D',
   },
-
-  /* Bottom Navigation */
-  bottomNav: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 10,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 10,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-  },
-  navItem: {
+  emptyRecentBox: {
+    paddingVertical: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    minWidth: 64,
   },
-  navText: {
-    fontSize: 11,
+  emptyRecentText: {
+    fontSize: 14,
+    fontWeight: '700',
     color: '#64748B',
-    fontWeight: '500',
+    marginTop: 8,
   },
-  navTextActive: {
-    color: '#15803D',
+  emptyRecentSub: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 4,
+  },
+  recentList: {
+    gap: 8,
+  },
+  recentItem: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    padding: 10,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 10,
+  },
+  recentCheckCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recentInfo: {
+    flex: 1,
+  },
+  recentInfoTop: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
+  recentType: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'right',
+  },
+  recentTsadiBadge: {
+    backgroundColor: '#E2E8F0',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  recentTsadiText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  recentAssignment: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'right',
+  },
+  moreText: {
+    textAlign: 'center',
+    color: '#64748B',
+    marginTop: 10,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  footer: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+  },
+  finishButton: {
+    flexDirection: 'row-reverse',
+    backgroundColor: '#0F172A',
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    maxWidth: 680,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  finishButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
     fontWeight: '800',
   },
 });

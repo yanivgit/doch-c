@@ -123,12 +123,17 @@ export default function DailySummaryModal({ visible, onClose, platoon, dohId }: 
   }, [logs, activeFilter]);
 
   // Tactical Style & icon mapping helpers
-  const getActionBadgeStyle = (action: string) => {
+  const getActionBadgeStyle = (action: string, log?: LogEvent) => {
     switch (action?.toUpperCase()) {
       case 'CHECKED':
       case 'VERIFY':
       case 'AUDIT':
-        return { bg: '#EDE9FE', text: '#5B21B6', label: 'אימות ציוד', icon: 'shield-check' };
+        return { 
+          bg: '#EDE9FE', 
+          text: '#5B21B6', 
+          label: (log?.details?.includes('סיום דו"ח') || log?.details?.includes('נעילת דו"ח') || log?.tsadiNumber === 'כללי') ? 'סיום אימות' : 'אימות ציוד', 
+          icon: 'shield-check' 
+        };
       case 'CREATE':
         return { bg: '#DCFCE7', text: '#15803D', label: 'קליטה חדשה', icon: 'plus-circle' };
       case 'UPDATE':
@@ -137,6 +142,8 @@ export default function DailySummaryModal({ visible, onClose, platoon, dohId }: 
         return { bg: '#FEF3C7', text: '#B45309', label: 'העברת פלוגה', icon: 'swap-horizontal' };
       case 'DELETE':
         return { bg: '#FEE2E2', text: '#DC2626', label: 'מחיקה מהמערכת', icon: 'trash-can-outline' };
+      case 'SECURITY_ALERT':
+        return { bg: '#FEE2E2', text: '#991B1B', label: 'התראת אבטחה', icon: 'shield-alert' };
       default:
         return { bg: '#F1F5F9', text: '#475569', label: action || 'אירוע', icon: 'history' };
     }
@@ -156,6 +163,8 @@ export default function DailySummaryModal({ visible, onClose, platoon, dohId }: 
         return { bg: '#D97706', color: '#FFFFFF', icon: 'swap-horizontal' };
       case 'DELETE':
         return { bg: '#DC2626', color: '#FFFFFF', icon: 'trash-can-outline' };
+      case 'SECURITY_ALERT':
+        return { bg: '#991B1B', color: '#FFFFFF', icon: 'shield-alert-outline' };
       default:
         return { bg: '#475569', color: '#FFFFFF', icon: 'calendar-check' };
     }
@@ -226,34 +235,47 @@ export default function DailySummaryModal({ visible, onClose, platoon, dohId }: 
         >
           {/* 2. Tactical Date Navigator */}
           <View style={styles.dateNavCard}>
+            {/* Top row: Active Date display + Status / Reset shortcut */}
+            <View style={styles.dateHeaderRow}>
+              <View style={styles.dateTitleRow}>
+                <View style={styles.dateIconBadge}>
+                  <Feather name="calendar" size={14} color="#0F4C3A" />
+                </View>
+                <Text style={styles.dateMainText} numberOfLines={1} ellipsizeMode="tail">
+                  {formatHebrewDate(currentDate)}
+                </Text>
+              </View>
+
+              {!isToday ? (
+                <TouchableOpacity 
+                  style={styles.todayShortcutBtn} 
+                  onPress={resetToToday}
+                  activeOpacity={0.75}
+                  accessibilityLabel="חזור לתאריך של היום"
+                >
+                  <Feather name="rotate-ccw" size={12} color="#15803D" />
+                  <Text style={styles.todayShortcutText}>חזור להיום</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.todayIndicatorBadge}>
+                  <View style={styles.todayDot} />
+                  <Text style={styles.todayIndicatorText}>היום</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Bottom row: Prev / Next Day navigation buttons */}
             <View style={styles.dateNavControls}>
               {/* Back into past (RTL Right button) */}
               <TouchableOpacity 
                 style={styles.navDayBtn} 
                 onPress={() => navigateDay(-1)}
                 activeOpacity={0.7}
+                accessibilityLabel="יום קודם"
               >
                 <Feather name="arrow-right" size={15} color="#0F172A" />
                 <Text style={styles.navDayBtnText}>יום קודם</Text>
               </TouchableOpacity>
-
-              {/* Date display & Return to Today shortcut */}
-              <View style={styles.dateCenterBlock}>
-                <View style={styles.dateTitleRow}>
-                  <Feather name="calendar" size={15} color="#15803D" />
-                  <Text style={styles.dateMainText}>{formatHebrewDate(currentDate)}</Text>
-                </View>
-                {!isToday && (
-                  <TouchableOpacity 
-                    style={styles.todayShortcutBtn} 
-                    onPress={resetToToday}
-                    activeOpacity={0.75}
-                  >
-                    <Feather name="rotate-ccw" size={12} color="#15803D" />
-                    <Text style={styles.todayShortcutText}>חזור להיום</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
 
               {/* Forward in time (RTL Left button, disabled on today) */}
               <TouchableOpacity 
@@ -261,6 +283,7 @@ export default function DailySummaryModal({ visible, onClose, platoon, dohId }: 
                 onPress={() => navigateDay(1)}
                 disabled={isToday}
                 activeOpacity={0.7}
+                accessibilityLabel="יום הבא"
               >
                 <Text style={[styles.navDayBtnText, isToday && styles.navDayBtnTextDisabled]}>יום הבא</Text>
                 <Feather name="arrow-left" size={15} color={isToday ? '#94A3B8' : '#0F172A'} />
@@ -385,7 +408,7 @@ export default function DailySummaryModal({ visible, onClose, platoon, dohId }: 
               <View style={styles.timelineGuideLine} />
 
               {filteredLogs.map((log, index) => {
-                const badge = getActionBadgeStyle(log.action);
+                const badge = getActionBadgeStyle(log.action, log);
                 const nodeTheme = getNodeTheme(log.action);
                 const timeStr = log.timestamp?.toDate 
                   ? log.timestamp.toDate().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })
@@ -435,7 +458,7 @@ export default function DailySummaryModal({ visible, onClose, platoon, dohId }: 
 
                       {/* Card Body: Equipment Identifier & Action Details */}
                       <View style={styles.cardBody}>
-                        {log.tsadiNumber && log.tsadiNumber !== 'multiple' ? (
+                        {log.tsadiNumber && !['multiple', 'כללי', 'N/A'].includes(log.tsadiNumber) ? (
                           <View style={styles.tsadiTag}>
                             <Text style={styles.tsadiTagText}>צ׳ {log.tsadiNumber}</Text>
                           </View>
@@ -451,7 +474,9 @@ export default function DailySummaryModal({ visible, onClose, platoon, dohId }: 
                           <View style={styles.footerTagItem}>
                             <Feather name="check-circle" size={12} color="#15803D" />
                             <Text style={[styles.cardFooterTagText, { color: '#15803D' }]}>
-                              אימות שטח תקף • אושר ע״י {log.user || 'קשפ״ל'}
+                              {log.details?.includes('סיום דו"ח') || log.details?.includes('נעילת דו"ח')
+                                ? `סיום דו״ח מאומת • אושר ע״י ${log.user || 'קשפ״ל'}`
+                                : `אימות שטח תקף • אושר ע״י ${log.user || 'קשפ״ל'}`}
                             </Text>
                           </View>
                         ) : log.action?.toUpperCase() === 'TRANSFER' ? (
@@ -604,31 +629,100 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    padding: 12,
     marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04,
     shadowRadius: 3,
     elevation: 1,
+    gap: 10,
   },
-  dateNavControls: {
+  dateHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
   },
-  navDayBtn: {
+  dateTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+    minWidth: 0,
+  },
+  dateIconBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 7,
+    backgroundColor: '#ECFDF5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateMainText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+    flexShrink: 1,
+  },
+  todayIndicatorBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    gap: 4,
+  },
+  todayDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#15803D',
+  },
+  todayIndicatorText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  todayShortcutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 7,
+    gap: 5,
+  },
+  todayShortcutText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  dateNavControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    width: '100%',
+  },
+  navDayBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F1F5F9',
     borderRadius: 10,
-    paddingVertical: 8,
+    paddingVertical: 9,
     paddingHorizontal: 12,
     gap: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   navDayBtnDisabled: {
     backgroundColor: '#F8FAFC',
+    borderColor: '#F1F5F9',
     opacity: 0.5,
   },
   navDayBtnText: {
@@ -638,34 +732,6 @@ const styles = StyleSheet.create({
   },
   navDayBtnTextDisabled: {
     color: '#94A3B8',
-  },
-  dateCenterBlock: {
-    alignItems: 'center',
-    gap: 4,
-  },
-  dateTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  dateMainText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  todayShortcutBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-    gap: 4,
-  },
-  todayShortcutText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#15803D',
   },
 
   /* 3. Filter Pills */

@@ -8,6 +8,8 @@ import { db } from '../firebase/config';
 import { theme } from '../theme/theme';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
 import OfflineBanner from '../components/OfflineBanner';
+import { sanitizeCycleName } from '../utils/security';
+import { logEvent } from '../firebase/api';
 
 interface Cycle {
   id: string;
@@ -20,6 +22,12 @@ export default function CycleSelectionScreen() {
   const { selectDoh, userRole, logout } = useApp();
   const [cycles, setCycles] = useState<Cycle[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!userRole) {
+      router.replace('/');
+    }
+  }, [userRole, router]);
 
   // Creation state
   const [isCreating, setIsCreating] = useState(false);
@@ -63,10 +71,11 @@ export default function CycleSelectionScreen() {
   }, [fetchCycles]);
 
   const handleCreateNew = async () => {
-    if (!newCycleName.trim()) return;
+    const cleanName = sanitizeCycleName(newCycleName);
+    if (!cleanName) return;
     
     // Check for duplicates
-    const isDuplicate = cycles.some(c => c.name.toLowerCase() === newCycleName.trim().toLowerCase());
+    const isDuplicate = cycles.some(c => c.name.toLowerCase() === cleanName.toLowerCase());
     if (isDuplicate) {
       Alert.alert('שגיאה', 'קיים כבר מסדר בשם זה. אנא בחר שם אחר למסדר.');
       return;
@@ -76,13 +85,22 @@ export default function CycleSelectionScreen() {
     try {
       const docRef = await withTimeout(
         addDoc(collection(db, 'doh_tzade'), {
-          name: newCycleName.trim(),
+          name: cleanName,
           createdAt: serverTimestamp(),
         }),
         8000
       );
 
-      await selectDoh(docRef.id, newCycleName.trim());
+      await logEvent({
+        deviceId: 'CYCLE_CREATED',
+        tsadiNumber: 'N/A',
+        action: 'CREATE',
+        user: 'קשר"ג',
+        details: `הוקם מסדר/מחזור חדש: "${cleanName}"`,
+        dohId: docRef.id
+      });
+
+      await selectDoh(docRef.id, cleanName);
       router.replace('/report/kashrag/setup');
     } catch (error: any) {
       console.error('Error creating report:', error);
@@ -106,41 +124,49 @@ export default function CycleSelectionScreen() {
   };
 
   const handleDeleteCycle = async (id: string, name: string) => {
-    if (Platform.OS === 'web') {
-      const confirmed = window.confirm(`האם אתה בטוח שברצונך למחוק את הדו"ח "${name}"?`);
-      if (confirmed) {
-        try {
-          setLoading(true);
-          await deleteDoc(doc(db, 'doh_tzade', id));
-          await fetchCycles();
-        } catch (error: any) {
-          console.error('Error deleting cycle:', error);
+    const performCycleDelete = async () => {
+      try {
+        setLoading(true);
+        await deleteDoc(doc(db, 'doh_tzade', id));
+        
+        await logEvent({
+          deviceId: 'CYCLE_DELETED',
+          tsadiNumber: 'N/A',
+          action: 'DELETE',
+          user: 'קשר"ג',
+          details: `נמחק מסדר/מחזור שלם: "${name}" (מזהה: ${id})`,
+          dohId: id
+        });
+
+        await fetchCycles();
+      } catch (error: any) {
+        console.error('Error deleting cycle:', error);
+        if (Platform.OS === 'web') {
           window.alert('מחיקת הדו"ח נכשלה: ' + (error?.message || error));
-          setLoading(false);
+        } else {
+          Alert.alert('שגיאה', 'מחיקת הדו"ח נכשלה: ' + (error?.message || error));
         }
+        setLoading(false);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm(`אזהרת אבטחה: האם אתה בטוח שברצונך למחוק את המסדר "${name}" לצמיתות?`);
+      if (confirmed) {
+        await performCycleDelete();
       }
       return;
     }
 
     Alert.alert(
-      'מחיקת דו"ח',
-      `האם אתה בטוח שברצונך למחוק את הדו"ח "${name}"?`,
+      'אזהרת אבטחה: מחיקת מסדר',
+      `האם אתה בטוח שברצונך למחוק את הדו"ח "${name}" לצמיתות? פעולה זו תתועד ביומן המבצעי.`,
       [
         { text: 'ביטול', style: 'cancel' },
         { 
           text: 'מחק לצמיתות', 
           style: 'destructive',
-          onPress: async () => {
-            try {
-              setLoading(true);
-              await deleteDoc(doc(db, 'doh_tzade', id));
-              await fetchCycles();
-            } catch (error: any) {
-              console.error('Error deleting cycle:', error);
-              Alert.alert('שגיאה', 'מחיקת הדו"ח נכשלה: ' + (error?.message || error));
-              setLoading(false);
-            }
-          }
+          onPress: performCycleDelete
         }
       ]
     );

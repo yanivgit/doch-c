@@ -7,6 +7,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../config';
 import { BattalionMetadata, MetadataCategory } from '../../types';
+import { sanitizeInput } from '../../utils/security';
 
 export const fetchMetadata = async (): Promise<BattalionMetadata | null> => {
   try {
@@ -28,6 +29,9 @@ export const learnMetadata = async (
   platoonContext?: string
 ) => {
   try {
+    const cleanValue = sanitizeInput(value, 60);
+    if (!cleanValue) return;
+
     const docRef = doc(db, 'battalion_settings', 'metadata');
     const snap = await getDoc(docRef);
     
@@ -42,16 +46,17 @@ export const learnMetadata = async (
 
     if (category === 'equipment') {
       await updateDoc(docRef, {
-        equipmentTypes: arrayUnion(value)
+        equipmentTypes: arrayUnion(cleanValue)
       });
     } else if (category === 'platoon') {
       await updateDoc(docRef, {
-        platoons: arrayUnion(value)
+        platoons: arrayUnion(cleanValue)
       });
     } else if (category === 'location') {
-      const key = platoonContext || '__default';
+      const cleanContext = platoonContext ? sanitizeInput(platoonContext, 50) : '__default';
+      const key = cleanContext || '__default';
       await updateDoc(docRef, {
-        [`locations.${key}`]: arrayUnion(value)
+        [`locations.${key}`]: arrayUnion(cleanValue)
       });
     }
   } catch (error) {

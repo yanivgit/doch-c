@@ -17,13 +17,19 @@ import { PLUGOT_WITH_UNASSIGNED } from '../../constants/data';
 import { Device } from '../../types';
 import { logEvent } from './logs.service';
 import { getActiveSession } from './verifications.service';
+import { sanitizeInput, sanitizeTsadi, isValidTsadi, MAX_LENGTHS } from '../../utils/security';
 
 export const addDevice = async (device: Omit<Device, 'id'>) => {
   try {
-    const cleanTsadi = device.tsadiNumber?.trim() || '';
-    if (!cleanTsadi) {
+    const cleanTsadi = sanitizeTsadi(device.tsadiNumber);
+    if (!cleanTsadi || !isValidTsadi(cleanTsadi)) {
       throw new Error("מספר צ' אינו תקין.");
     }
+
+    const cleanType = sanitizeInput(device.type, MAX_LENGTHS.DEVICE_TYPE) || 'כללי';
+    const cleanAssignment = sanitizeInput(device.assignment, MAX_LENGTHS.PLATOON) || 'מחלקת קשר';
+    const cleanLocation = sanitizeInput(device.location, MAX_LENGTHS.LOCATION);
+    const cleanDohId = sanitizeInput(device.dohId, 100);
 
     // Check for duplicate Tsadi number in the current dohId
     let q;
@@ -188,13 +194,17 @@ export const getAllPlatoons = async (): Promise<string[]> => {
 
 export const deleteDevice = async (deviceId: string) => {
   try {
-    const deviceRef = doc(db, 'devices', deviceId);
+    if (!deviceId || typeof deviceId !== 'string' || deviceId.trim().length === 0) {
+      throw new Error("מזהה מכשיר אינו תקין למחיקה.");
+    }
+    const cleanId = sanitizeInput(deviceId, 120);
+    const deviceRef = doc(db, 'devices', cleanId);
     const snap = await getDoc(deviceRef);
     
     if (snap.exists()) {
       const data = snap.data() as Device;
       await logEvent({
-        deviceId,
+        deviceId: cleanId,
         tsadiNumber: data.tsadiNumber,
         action: 'DELETE',
         user: 'קשר"ג',
@@ -235,23 +245,27 @@ export const updateDeviceAssignmentAndLocation = async (
       dohId = data.dohId || '';
     }
     
-    const updateData: any = { assignment: newPlatoon };
-    if (newLocation !== undefined) {
-      updateData.location = newLocation;
+    const cleanPlatoon = sanitizeInput(newPlatoon, MAX_LENGTHS.PLATOON);
+    const cleanLocation = newLocation !== undefined ? sanitizeInput(newLocation, MAX_LENGTHS.LOCATION) : undefined;
+    const cleanUser = sanitizeInput(user || 'קשר"ג', 50);
+
+    const updateData: any = { assignment: cleanPlatoon };
+    if (cleanLocation !== undefined) {
+      updateData.location = cleanLocation;
     }
     await updateDoc(deviceRef, updateData);
     
-    const newDetails = `${newPlatoon}${newLocation ? ` (${newLocation})` : ''}`;
+    const newDetails = `${cleanPlatoon}${cleanLocation ? ` (${cleanLocation})` : ''}`;
     
     if (tsadi) {
-      const involvedPlatoons = [oldPlatoon, newPlatoon].filter(p => p && p.trim().length > 0);
+      const involvedPlatoons = [oldPlatoon, cleanPlatoon].filter(p => p && p.trim().length > 0);
       await logEvent({
         deviceId,
         tsadiNumber: tsadi,
         action: 'TRANSFER',
-        user: user || 'קשר"ג',
+        user: cleanUser,
         details: `הועבר מ-${oldDetails} אל ${newDetails}`,
-        platoon: newPlatoon,
+        platoon: cleanPlatoon,
         involvedPlatoons,
         dohId
       });
@@ -265,7 +279,7 @@ export const updateDeviceAssignmentAndLocation = async (
           const verifiedDocSnap = await getDoc(verifiedDocRef);
           if (verifiedDocSnap.exists()) {
             await updateDoc(verifiedDocRef, {
-              platoon: newPlatoon
+              platoon: cleanPlatoon
             });
           }
         } catch (e) {
@@ -282,6 +296,7 @@ export const updateDeviceAssignmentAndLocation = async (
 
 export const updateDeviceLocation = async (deviceId: string, newLocation: string) => {
   try {
+    const cleanLocation = sanitizeInput(newLocation, MAX_LENGTHS.LOCATION);
     const deviceRef = doc(db, 'devices', deviceId);
     const snap = await getDoc(deviceRef);
     
@@ -298,7 +313,7 @@ export const updateDeviceLocation = async (deviceId: string, newLocation: string
       dohId = data.dohId || '';
     }
     
-    await updateDoc(deviceRef, { location: newLocation });
+    await updateDoc(deviceRef, { location: cleanLocation });
     
     if (tsadi) {
       await logEvent({
@@ -306,7 +321,7 @@ export const updateDeviceLocation = async (deviceId: string, newLocation: string
         tsadiNumber: tsadi,
         action: 'UPDATE',
         user: 'קשפ"ל',
-        details: `מיקום עודכן מ-${oldLocation} אל ${newLocation || 'ללא מיקום'}`,
+        details: `מיקום עודכן מ-${oldLocation} אל ${cleanLocation || 'ללא מיקום'}`,
         platoon: assignment,
         involvedPlatoons: assignment ? [assignment] : [],
         dohId

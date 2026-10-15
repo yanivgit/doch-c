@@ -42,7 +42,13 @@ import { theme } from '../../../theme/theme';
 
 export default function KashpalReportScreen() {
   const router = useRouter();
-  const { selectedDohId, selectedPlatoon, selectPlatoon, logout } = useApp();
+  const { userRole, selectedDohId, selectedPlatoon, selectPlatoon, logout } = useApp();
+  
+  useEffect(() => {
+    if (userRole === null) {
+      router.replace('/');
+    }
+  }, [userRole, router]);
   
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(false);
@@ -152,11 +158,7 @@ export default function KashpalReportScreen() {
           return;
         }
         const sessionData = { id: snap.id, ...snap.data() } as VerificationSession;
-        if (sessionData.globalStatus === 'archived') {
-          setActiveSession(null);
-        } else {
-          setActiveSession(sessionData);
-        }
+        setActiveSession(sessionData);
       } catch (error) {
         console.error("Error processing snapshot:", error);
       }
@@ -198,19 +200,26 @@ export default function KashpalReportScreen() {
   }, [activeSession?.id, selectedPlatoon]);
 
   // Status checks for current platoon in today's daily session
+  const isSessionArchived = useMemo(() => {
+    return activeSession?.globalStatus === 'archived';
+  }, [activeSession]);
+
   const isMyPlatoonCompleted = useMemo(() => {
-    return activeSession?.platoons?.[selectedPlatoon || '']?.status === 'completed';
-  }, [activeSession, selectedPlatoon]);
+    return (
+      isSessionArchived ||
+      activeSession?.platoons?.[selectedPlatoon || '']?.status === 'completed'
+    );
+  }, [activeSession, selectedPlatoon, isSessionArchived]);
 
   const isMyPlatoonActive = useMemo(() => {
-    if (isMyPlatoonCompleted) return false;
+    if (isMyPlatoonCompleted || isSessionArchived) return false;
     return (
       activeSession?.platoons?.[selectedPlatoon || '']?.status === 'active' || 
       activeSession?.globalStatus === 'active'
     );
-  }, [activeSession, selectedPlatoon, isMyPlatoonCompleted]);
+  }, [activeSession, selectedPlatoon, isMyPlatoonCompleted, isSessionArchived]);
 
-  const canVerify = isMyPlatoonActive && !isMyPlatoonCompleted;
+  const canVerify = isMyPlatoonActive && !isMyPlatoonCompleted && !isSessionArchived;
 
   // Pulse animation for active session beacon
   useEffect(() => {
@@ -440,29 +449,42 @@ export default function KashpalReportScreen() {
       {/* 1. Tactical Command Header */}
       <View style={styles.commandHeader}>
         <View style={styles.headerRightBlock}>
-          <View style={styles.unitBadge}>
-            <MaterialCommunityIcons name="shield-check" size={16} color="#15803D" />
+          <TouchableOpacity 
+            style={styles.unitBadge}
+            onPress={() => selectPlatoon('')}
+            activeOpacity={selectedPlatoon ? 0.7 : 1}
+            disabled={!selectedPlatoon}
+          >
+            <MaterialCommunityIcons name="shield-check" size={14} color="#15803D" />
             <Text style={styles.unitBadgeText}>{selectedPlatoon || 'בחר פלוגה'}</Text>
+            {selectedPlatoon ? (
+              <Feather name="chevron-down" size={12} color="#15803D" style={{ marginLeft: 2 }} />
+            ) : null}
+          </TouchableOpacity>
+          <View style={styles.headerTitleRow}>
+            <Text style={styles.headerTitle}>ביקורת כשירות קשפ״ל</Text>
           </View>
-          <Text style={styles.headerTitle}>ביקורת כשירות קשפ״ל</Text>
         </View>
 
         <View style={styles.headerLeftBlock}>
-          <TouchableOpacity 
-            style={styles.headerActionBtn} 
-            onPress={() => setIsTimelineVisible(true)}
-            activeOpacity={0.8}
-          >
-            <Feather name="clipboard" size={18} color="#0F172A" />
-            <Text style={styles.headerActionBtnText}>יומן אירועים</Text>
-          </TouchableOpacity>
+          {selectedPlatoon ? (
+            <TouchableOpacity 
+              style={styles.headerActionBtn} 
+              onPress={() => setIsTimelineVisible(true)}
+              activeOpacity={0.8}
+            >
+              <Feather name="clipboard" size={15} color="#0F172A" />
+              <Text style={styles.headerActionBtnText}>יומן אירועים</Text>
+            </TouchableOpacity>
+          ) : null}
 
           <TouchableOpacity 
             style={styles.logoutBtn} 
             onPress={handleLogout}
             activeOpacity={0.8}
+            accessibilityLabel="התנתק"
           >
-            <Feather name="log-out" size={18} color="#DC2626" />
+            <Feather name="log-out" size={17} color="#DC2626" />
           </TouchableOpacity>
         </View>
       </View>
@@ -515,16 +537,20 @@ export default function KashpalReportScreen() {
                       </Text>
                     </TouchableOpacity>
                   </View>
-                ) : isMyPlatoonCompleted ? (
+                ) : isMyPlatoonCompleted || isSessionArchived ? (
                   <View style={styles.completedBanner}>
                     <View style={styles.completedHeader}>
-                      <MaterialCommunityIcons name="check-decagram" size={22} color="#15803D" />
+                      <MaterialCommunityIcons name="check-decagram" size={24} color="#15803D" />
                       <Text style={styles.completedTitle}>
-                        הדו״ח היומי הושלם ומסונכרן מול הקשר״ג
+                        {isSessionArchived
+                          ? 'הדו״ח היומי הושלם במלואו וננעל בהיסטוריה!'
+                          : 'הדו״ח היומי הושלם ומסונכרן מול הקשר״ג'}
                       </Text>
                     </View>
                     <Text style={styles.completedSubtitle}>
-                      {verifiedCount} מתוך {devices.length} פריטים נבדקו ואומתו. רשימת הציוד פתוחה לעיון ועדכון מיקומים.
+                      {isSessionArchived
+                        ? `כלל הפריטים בגדוד אומתו וסונכרנו בהצלחה (${verifiedCount}/${devices.length}). הדו"ח נשמר בארכיון הגדודי כהושלם.`
+                        : `${verifiedCount} מתוך ${devices.length} פריטים נבדקו ואומתו. רשימת הציוד פתוחה לעיון ועדכון מיקומים.`}
                     </Text>
                   </View>
                 ) : (
@@ -892,12 +918,14 @@ export default function KashpalReportScreen() {
             </View>
             <Text style={styles.selectorTitle}>בחר פלוגה להתחלת עבודה</Text>
             <Text style={styles.selectorSub}>בחר את הפלוגה שברצונך לאמת או לנהל את מצבת הציוד שלה</Text>
-            <SearchableDropdown
-              data={PLUGOT as unknown as string[]}
-              value={selectedPlatoon || ''}
-              onSelect={selectPlatoon}
-              placeholder="חפש ובחר פלוגה..."
-            />
+            <View style={styles.selectorDropdownWrap}>
+              <SearchableDropdown
+                data={PLUGOT as unknown as string[]}
+                value={selectedPlatoon || ''}
+                onSelect={selectPlatoon}
+                placeholder="חפש ובחר פלוגה..."
+              />
+            </View>
           </View>
         </View>
       )}
@@ -917,13 +945,20 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8FAFC',
+    width: '100%',
+    overflow: 'hidden',
   },
   mainScroll: {
     flex: 1,
+    width: '100%',
   },
   scrollContent: {
     paddingHorizontal: 16,
+    paddingTop: 10,
     paddingBottom: 36,
+    maxWidth: 640,
+    alignSelf: 'center',
+    width: '100%',
   },
 
   /* 1. Tactical Command Header */
@@ -932,34 +967,44 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
   },
   headerRightBlock: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+    flex: 1,
+    alignItems: 'flex-start',
+    gap: 4,
   },
   unitBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 4,
     backgroundColor: '#DCFCE7',
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
   unitBadgeText: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '700',
     color: '#15803D',
   },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
   headerTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
     color: '#0F172A',
+    letterSpacing: -0.2,
   },
   headerLeftBlock: {
     flexDirection: 'row',
@@ -969,9 +1014,9 @@ const styles = StyleSheet.create({
   headerActionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
     backgroundColor: '#F1F5F9',
-    paddingHorizontal: 10,
+    paddingHorizontal: 9,
     paddingVertical: 6,
     borderRadius: 8,
     borderWidth: 1,
@@ -979,11 +1024,12 @@ const styles = StyleSheet.create({
   },
   headerActionBtnText: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#0F172A',
   },
   logoutBtn: {
-    padding: 7,
+    width: 34,
+    height: 34,
     borderRadius: 8,
     backgroundColor: '#FEE2E2',
     justifyContent: 'center',
@@ -1466,14 +1512,18 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 20,
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
   },
   selectorCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
     padding: 24,
     width: '100%',
-    maxWidth: 400,
+    maxWidth: 380,
     alignItems: 'center',
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 6 },
@@ -1482,6 +1532,10 @@ const styles = StyleSheet.create({
     elevation: 4,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+  },
+  selectorDropdownWrap: {
+    width: '100%',
+    marginTop: 6,
   },
   selectorIconCircle: {
     width: 64,

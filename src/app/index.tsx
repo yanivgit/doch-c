@@ -12,6 +12,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApp, UserRole } from '../context/AppContext';
 import { Feather, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import PinCodeModal from '../components/modals/PinCodeModal';
+import { verifyPasscode } from '../utils/security';
+import { logEvent } from '../firebase/services/logs.service';
 
 export default function RoleSelectionScreen() {
   const { login } = useApp();
@@ -39,8 +41,16 @@ export default function RoleSelectionScreen() {
     return () => animation.stop();
   }, [pulseAnim]);
 
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
+
   const handleRoleSelect = (role: UserRole) => {
     if (role === 'Kashrag') {
+      if (lockoutUntil && Date.now() < lockoutUntil) {
+        const remainingSeconds = Math.ceil((lockoutUntil - Date.now()) / 1000);
+        Alert.alert('גישה חסומה זמנית', `יותר מדי נסיונות שגויים. המתן עוד ${remainingSeconds} שניות.`);
+        return;
+      }
       setShowPinModal(true);
     } else {
       login(role);
@@ -48,13 +58,43 @@ export default function RoleSelectionScreen() {
   };
 
   const handlePinSubmit = () => {
-    if (pin === '1379') {
+    if (lockoutUntil && Date.now() < lockoutUntil) {
+      const remainingSeconds = Math.ceil((lockoutUntil - Date.now()) / 1000);
+      Alert.alert('גישה חסומה', `עקב ניסיונות שגויים חוזרים, הגישה חסומה לעוד ${remainingSeconds} שניות.`);
+      setShowPinModal(false);
+      setPin('');
+      return;
+    }
+
+    if (verifyPasscode(pin)) {
+      setFailedAttempts(0);
+      setLockoutUntil(null);
       setShowPinModal(false);
       setPin('');
       login('Kashrag');
     } else {
-      Alert.alert('שגיאה', 'קוד PIN שגוי');
+      const nextAttempts = failedAttempts + 1;
+      setFailedAttempts(nextAttempts);
       setPin('');
+
+      if (nextAttempts >= 5) {
+        const lockUntil = Date.now() + 30000;
+        setLockoutUntil(lockUntil);
+        setShowPinModal(false);
+        logEvent({
+          deviceId: 'AUTH_LOCKOUT',
+          tsadiNumber: 'N/A',
+          action: 'SECURITY_ALERT',
+          user: 'אבטחת_מערכת',
+          details: 'נעילת אבטחה: 5 ניסיונות שגויים ברצף להזנת PIN קשר"ג',
+          platoon: 'כללי',
+          involvedPlatoons: []
+        }).catch((e) => console.warn('Failed to log security lockout event:', e));
+        Alert.alert('אבטחה: גישה ננעלה', 'בוצעו 5 ניסיונות שגויים ברצף. הגישה לניהול קשר"ג ננעלה למשך 30 שניות.');
+      } else {
+        const remaining = 5 - nextAttempts;
+        Alert.alert('שגיאה', `קוד PIN שגוי. נותרו ${remaining} ניסיונות לפני נעילה.`);
+      }
     }
   };
 

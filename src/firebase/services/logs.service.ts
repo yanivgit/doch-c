@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../config';
 import { LogEvent, Device } from '../../types';
+import { sanitizeInput, sanitizeTsadi, MAX_LENGTHS } from '../../utils/security';
 
 export const logEvent = async (event: Omit<LogEvent, 'id' | 'timestamp'>) => {
   try {
@@ -28,11 +29,23 @@ export const logEvent = async (event: Omit<LogEvent, 'id' | 'timestamp'>) => {
       }
     }
 
-    const docRef = await addDoc(collection(db, 'logs'), {
+    const sanitizedPayload: any = {
       ...event,
-      ...(dohId ? { dohId } : {}),
+      action: sanitizeInput(event.action, 30),
+      user: sanitizeInput(event.user, 60) || 'מערכת',
+      details: sanitizeInput(event.details, MAX_LENGTHS.LOG_DETAILS),
+      tsadiNumber: sanitizeTsadi(event.tsadiNumber),
       timestamp: Timestamp.now()
-    });
+    };
+
+    if (event.platoon) {
+      sanitizedPayload.platoon = sanitizeInput(event.platoon, MAX_LENGTHS.PLATOON);
+    }
+    if (dohId) {
+      sanitizedPayload.dohId = sanitizeInput(dohId, 100);
+    }
+
+    const docRef = await addDoc(collection(db, 'logs'), sanitizedPayload);
     return docRef.id;
   } catch (error) {
     console.error("Error logging event: ", error);

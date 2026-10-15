@@ -12,6 +12,7 @@ import {
 import { db } from '../config';
 import { Device, DeviceFaultStatus } from '../../types';
 import { logEvent } from './logs.service';
+import { sanitizeInput, sanitizeTsadi, isValidTsadi, MAX_LENGTHS } from '../../utils/security';
 
 export const updateDeviceFaultStatus = async (
   deviceId: string, 
@@ -20,6 +21,9 @@ export const updateDeviceFaultStatus = async (
   notes?: string
 ) => {
   try {
+    const cleanUser = sanitizeInput(user, 50) || 'קשר"ג';
+    const cleanNotes = notes ? sanitizeInput(notes, MAX_LENGTHS.FAULT_NOTES) : '';
+
     const deviceRef = doc(db, 'devices', deviceId);
     const snap = await getDoc(deviceRef);
     if (!snap.exists()) {
@@ -31,8 +35,8 @@ export const updateDeviceFaultStatus = async (
       await updateDoc(deviceRef, {
         faultStatus,
         faultReportedAt: Timestamp.now(),
-        faultReportedBy: user,
-        faultNotes: notes || ''
+        faultReportedBy: cleanUser,
+        faultNotes: cleanNotes
       });
 
       const severityText = faultStatus === 'inspection' 
@@ -116,8 +120,9 @@ export const replaceDeviceAtBrigade = async (
   user: string
 ) => {
   try {
-    const cleanNewTsadi = newTsadiNumber.trim();
-    if (!cleanNewTsadi) throw new Error('EMPTY_TSADI');
+    const cleanNewTsadi = sanitizeTsadi(newTsadiNumber);
+    if (!cleanNewTsadi || !isValidTsadi(cleanNewTsadi)) throw new Error('EMPTY_TSADI');
+    const cleanUser = sanitizeInput(user, 50) || 'קשר"ג';
 
     const deviceRef = doc(db, 'devices', deviceId);
     const snap = await getDoc(deviceRef);

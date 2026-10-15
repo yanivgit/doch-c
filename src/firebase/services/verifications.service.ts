@@ -19,6 +19,7 @@ import { db } from '../config';
 import { VerificationSession, VerificationHistory, Device } from '../../types';
 import { logEvent } from './logs.service';
 import { getAllDevices, getDevicesByPlatoonAndDohId } from './devices.service';
+import { sanitizeInput, MAX_LENGTHS } from '../../utils/security';
 
 export const getDailyDocId = (dohId: string) => {
   const date = new Date();
@@ -125,15 +126,18 @@ export const endKashpalSession = async (dohId: string, platoon: string) => {
     }
 
     await logEvent({
-      deviceId: '',
+      deviceId: 'PLATOON_REPORT',
       tsadiNumber: 'כללי',
-      action: 'UPDATE',
+      action: 'CHECKED',
       user: `קשפ"ל_${platoon}`,
       details: `סיום דו"ח יומי עבור ${platoon}`,
       platoon,
       involvedPlatoons: [platoon],
       dohId
     });
+
+    // Check if the entire battalion completed or all equipment is verified!
+    await checkAndAutoArchiveIfComplete(dohId);
   } catch (error) {
     console.error("Error ending kashpal session: ", error);
     throw error;
@@ -263,26 +267,42 @@ export const getVerifiedDevices = async (
 
 export const verifyDevice = async (sessionId: string, deviceId: string, user: string, platoon?: string) => {
   try {
+    if (!sessionId || !deviceId) return;
+    const cleanSessionId = sanitizeInput(sessionId, 120);
+    const cleanDeviceId = sanitizeInput(deviceId, 120);
+    const cleanUser = sanitizeInput(user || 'קשפ"ל', 60);
+
     let resolvedPlatoon = platoon;
-    if (!resolvedPlatoon && user && user.startsWith('קשפ"ל_')) {
-      resolvedPlatoon = user.replace('קשפ"ל_', '');
+    if (!resolvedPlatoon && cleanUser && cleanUser.startsWith('קשפ"ל_')) {
+      resolvedPlatoon = cleanUser.replace('קשפ"ל_', '');
     }
-    const verifiedDeviceRef = doc(db, 'verificationSessions', sessionId, 'verifiedDevices', deviceId);
+    const cleanPlatoon = resolvedPlatoon ? sanitizeInput(resolvedPlatoon, MAX_LENGTHS.PLATOON) : undefined;
+
+    const verifiedDeviceRef = doc(db, 'verificationSessions', cleanSessionId, 'verifiedDevices', cleanDeviceId);
     const dataToSet: any = {
       verifiedAt: Timestamp.now(),
       timestamp: serverTimestamp(),
-      verifiedBy: user
+      verifiedBy: cleanUser
     };
-    if (resolvedPlatoon) {
-      dataToSet.platoon = resolvedPlatoon;
+    if (cleanPlatoon) {
+      dataToSet.platoon = cleanPlatoon;
     }
     await setDoc(verifiedDeviceRef, dataToSet);
 
-    const deviceRef = doc(db, 'devices', deviceId);
+    const deviceRef = doc(db, 'devices', cleanDeviceId);
     await updateDoc(deviceRef, {
       lastChecked: Timestamp.now(),
-      verifiedBy: user
+      verifiedBy: cleanUser
     });
+
+    // Check if 100% of all devices in the battalion are now verified!
+    let dohId = '';
+    if (cleanSessionId.includes('_')) {
+      dohId = cleanSessionId.substring(0, cleanSessionId.lastIndexOf('_'));
+    }
+    if (dohId) {
+      await checkAndAutoArchiveIfComplete(dohId);
+    }
   } catch (error) {
     console.error("Error verifying device: ", error);
     throw error;
@@ -291,7 +311,10 @@ export const verifyDevice = async (sessionId: string, deviceId: string, user: st
 
 export const unverifyDevice = async (sessionId: string, deviceId: string) => {
   try {
-    const verifiedDeviceRef = doc(db, 'verificationSessions', sessionId, 'verifiedDevices', deviceId);
+    if (!sessionId || !deviceId) return;
+    const cleanSessionId = sanitizeInput(sessionId, 120);
+    const cleanDeviceId = sanitizeInput(deviceId, 120);
+    const verifiedDeviceRef = doc(db, 'verificationSessions', cleanSessionId, 'verifiedDevices', cleanDeviceId);
     await deleteDoc(verifiedDeviceRef);
   } catch (error) {
     console.error("Error unverifying device: ", error);
@@ -310,6 +333,12 @@ export const archiveSession = async (
   if (!session.id) return;
   
   try {
+    const sessionRef = doc(db, 'verificationSessions', session.id);
+    const sessionSnap = await getDoc(sessionRef);
+    if (sessionSnap.exists() && sessionSnap.data().globalStatus === 'archived') {
+      return; // Already archived, avoid duplicate archive writes
+    }
+
     const verifiedMap = session.verifiedDevices && Object.keys(session.verifiedDevices).length > 0
       ? session.verifiedDevices 
       : await getVerifiedDevices(session.id);
@@ -348,12 +377,25 @@ export const archiveSession = async (
       platoonBreakdown[p] = `${verified}/${total} (${Math.round((verified / total) * 100)}%)`;
     });
 
-    const dateStr = session.createdAt ? session.createdAt.toDate().toLocaleDateString('he-IL') : new Date().toLocaleDateString('he-IL');
+    let resolvedDohId = session.dohId;
+    if (!resolvedDohId && session.id && session.id.includes('_')) {
+      resolvedDohId = session.id.substring(0, session.id.lastIndexOf('_'));
+    }
+
+    let dateStr = new Date().toLocaleDateString('he-IL');
+    if (session.createdAt) {
+      if (typeof (session.createdAt as any).toDate === 'function') {
+        dateStr = (session.createdAt as any).toDate().toLocaleDateString('he-IL');
+      } else if ((session.createdAt as any).seconds) {
+        dateStr = new Date((session.createdAt as any).seconds * 1000).toLocaleDateString('he-IL');
+      }
+    }
+
     const isComplete = !options?.autoArchivedIncomplete && verifiedCount === totalDevices && totalDevices > 0;
     const historyStatus = isComplete ? 'בוצע' : 'לא הושלם';
 
     const historyData: Omit<VerificationHistory, 'id'> = {
-      dohId: session.dohId,
+      dohId: resolvedDohId || '',
       date: dateStr,
       overallProgress,
       platoonBreakdown,
@@ -364,9 +406,10 @@ export const archiveSession = async (
       ...(options?.completionNotes ? { completionNotes: options.completionNotes } : {})
     };
 
-    await addDoc(collection(db, 'verificationHistory'), historyData);
+    // Use deterministic history doc ID based on session.id to guarantee idempotency and avoid duplicates
+    const historyDocRef = doc(db, 'verificationHistory', session.id);
+    await setDoc(historyDocRef, historyData, { merge: true });
 
-    const sessionRef = doc(db, 'verificationSessions', session.id);
     const sessionUpdate: any = { 
       globalStatus: 'archived',
       archivedAt: serverTimestamp()
@@ -383,6 +426,81 @@ export const archiveSession = async (
   } catch (error) {
     console.error("Error archiving session: ", error);
     throw error;
+  }
+};
+
+export const checkAndAutoArchiveIfComplete = async (dohId: string): Promise<boolean> => {
+  if (!dohId) return false;
+  try {
+    const docId = getDailyDocId(dohId);
+    const sessionRef = doc(db, 'verificationSessions', docId);
+    const snap = await getDoc(sessionRef);
+
+    if (!snap.exists()) return false;
+    const sessionData = { id: snap.id, ...snap.data() } as VerificationSession;
+
+    // Already archived
+    if (sessionData.globalStatus === 'archived') return false;
+
+    // Fetch all devices in the battalion for this dohId
+    const allDevices = await getAllDevices(dohId);
+    if (allDevices.length === 0) return false;
+
+    // Fetch all verified devices in this session
+    const verifiedMap = await getVerifiedDevices(docId);
+    const totalDevices = allDevices.length;
+    const verifiedCount = allDevices.filter(d => d.id && verifiedMap[d.id]).length;
+
+    // 1. Condition: 100% of all devices in the battalion are verified
+    const is100Percent = verifiedCount === totalDevices && totalDevices > 0;
+
+    // 2. Condition: All platoons in the session have completed their reporting
+    const platoons = sessionData.platoons || {};
+    const sessionPlatoonKeys = Object.keys(platoons);
+    const allPlatoonsCompleted = 
+      sessionPlatoonKeys.length > 0 && 
+      sessionPlatoonKeys.every(p => platoons[p]?.status === 'completed');
+
+    if (is100Percent) {
+      await archiveSession(sessionData, allDevices, {
+        completionNotes: 'הדו"ח הושלם במלואו (100% אימות גדודי)'
+      });
+
+      await logEvent({
+        deviceId: 'GLOBAL_REPORT',
+        tsadiNumber: 'כללי',
+        action: 'CHECKED',
+        user: 'מערכת',
+        details: `סיום ונעילת דו"ח גדודי מלא - כל ${totalDevices} הפריטים אומתו (100%) והועברו ישירות להיסטוריה כהושלם`,
+        platoon: 'כללי',
+        involvedPlatoons: [],
+        dohId
+      });
+
+      return true;
+    } else if (allPlatoonsCompleted) {
+      await archiveSession(sessionData, allDevices, {
+        completionNotes: `הסתיים על ידי כל הפלוגות (${verifiedCount}/${totalDevices} פריטים אומתו)`
+      });
+
+      await logEvent({
+        deviceId: 'GLOBAL_REPORT',
+        tsadiNumber: 'כללי',
+        action: 'CHECKED',
+        user: 'מערכת',
+        details: `נעילת דו"ח גדודי בסיום כלל הפלוגות - ${verifiedCount}/${totalDevices} פריטים אומתו`,
+        platoon: 'כללי',
+        involvedPlatoons: [],
+        dohId
+      });
+
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    console.error("Error in checkAndAutoArchiveIfComplete:", error);
+    return false;
   }
 };
 
@@ -461,6 +579,9 @@ export const archiveExpiredSessions = async (dohId: string): Promise<number> => 
 
 export const getHistoryLogs = async (dohId: string): Promise<VerificationHistory[]> => {
   try {
+    // Automatically archive any active session that has reached 100% or where all platoons completed
+    await checkAndAutoArchiveIfComplete(dohId);
+
     const q = query(
       collection(db, 'verificationHistory'),
       where('dohId', '==', dohId)
@@ -503,7 +624,26 @@ export const getHistoryLogs = async (dohId: string): Promise<VerificationHistory
 
 export const deleteHistoryLog = async (logId: string) => {
   try {
-    const logRef = doc(db, 'verificationHistory', logId);
+    if (!logId || typeof logId !== 'string') return;
+    const cleanId = sanitizeInput(logId, 120);
+    const logRef = doc(db, 'verificationHistory', cleanId);
+    
+    // Log the deletion to the immutable military audit trail before removing the record
+    const snap = await getDoc(logRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      await logEvent({
+        deviceId: 'HISTORY_REPORT',
+        tsadiNumber: 'כללי',
+        action: 'DELETE',
+        user: 'קשר"ג',
+        details: `מחיקת היסטוריית דו"ח מיום ${data.date || 'לא ידוע'}`,
+        platoon: 'כללי',
+        involvedPlatoons: [],
+        dohId: data.dohId
+      });
+    }
+
     await deleteDoc(logRef);
   } catch (error) {
     console.error("Error deleting history log: ", error);

@@ -19,9 +19,20 @@ import SearchableDropdown from '../../../components/SearchableDropdown';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
 import OfflineBanner from '../../../components/OfflineBanner';
 
+import { useEffect } from 'react';
+import { sanitizeInput, sanitizeTsadi, MAX_LENGTHS } from '../../../utils/security';
+
 export default function RapidSetupScreen() {
   const router = useRouter();
-  const { selectedDohId, selectedDohName, getAllEquipmentTypes, getAllPlatoons, getLocationsForPlatoon, learnNewOption } = useApp();
+  const { userRole, selectedDohId, selectedDohName, getAllEquipmentTypes, getAllPlatoons, getLocationsForPlatoon, learnNewOption } = useApp();
+
+  useEffect(() => {
+    if (!userRole) {
+      router.replace('/');
+    } else if (userRole !== 'Kashrag') {
+      router.replace('/report/kashpal');
+    }
+  }, [userRole, router]);
 
   const [equipmentType, setEquipmentType] = useState('');
   const [tzadeNumber, setTzadeNumber] = useState('');

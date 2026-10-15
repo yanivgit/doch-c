@@ -139,6 +139,8 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 15,
     justifyContent: 'center',
+    width: '100%',
+    alignSelf: 'stretch',
     minHeight: 50,
   },
   triggerText: {
