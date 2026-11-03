@@ -161,6 +161,8 @@ export default function ReplaceDeviceModal({
                 if (errorMessage) setErrorMessage(null);
               }}
               textAlign="right"
+              keyboardType="numeric"
+              inputMode="numeric"
               autoCapitalize="characters"
               autoFocus
             />

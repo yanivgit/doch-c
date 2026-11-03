@@ -3,6 +3,7 @@ import { Modal, View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndi
 import { VerificationHistory, getHistoryLogs, deleteHistoryLog } from '../firebase/api';
 import { theme } from '../theme/theme';
 import Accordion from './Accordion';
+import { comparePlatoons, compareEquipmentTypes } from '../utils';
 
 interface Props {
   visible: boolean;
@@ -122,10 +123,10 @@ export default function VerificationHistoryModal({ visible, onClose, dohId }: Pr
                               acc[key].push(d);
                               return acc;
                             }, {} as Record<string, typeof log.missingDevices>)
-                          ).sort(([a], [b]) => a.localeCompare(b)).map(([platoon, devices]) => (
+                          ).sort(([a], [b]) => comparePlatoons(a, b)).map(([platoon, devices]) => (
                             <View key={platoon} style={styles.missingGroup}>
                               <Text style={styles.missingGroupTitle}>{platoon}</Text>
-                              {devices.map(d => (
+                              {devices.sort((a, b) => compareEquipmentTypes(a.type, b.type)).map(d => (
                                 <View key={d.id || d.tsadiNumber} style={styles.missingItemRow}>
                                   <Text style={styles.missingItemType}>{d.type}</Text>
                                   <Text style={styles.missingItemTsadi}>צ&apos;: {d.tsadiNumber}</Text>

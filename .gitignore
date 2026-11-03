@@ -43,3 +43,7 @@ example
 /android
 
 .vercel
+
+# Playwright
+test-results/
+playwright-report/

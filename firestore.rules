@@ -11,6 +11,10 @@ service cloud.firestore {
       return !(field in data) || data[field] == null || (data[field] is string && data[field].size() <= maxLen);
     }
 
+    function isOptionalBool(data, field) {
+      return !(field in data) || data[field] == null || data[field] is bool;
+    }
+
     // 1. doh_tzade (Operational cycles / inspections)
     match /doh_tzade/{cycleId} {
       allow get, list: if true;
@@ -29,13 +33,41 @@ service cloud.firestore {
                     && isOptionalString(request.resource.data, 'dohId', 100)
                     && isOptionalString(request.resource.data, 'location', 100)
                     && isOptionalString(request.resource.data, 'faultStatus', 30)
-                    && isOptionalString(request.resource.data, 'faultNotes', 500);
+                    && isOptionalString(request.resource.data, 'faultNotes', 500)
+                    && isOptionalString(request.resource.data, 'notes', 500)
+                    && isOptionalString(request.resource.data, 'linkedDeviceId', 120)
+                    && isOptionalString(request.resource.data, 'linkedTsadi', 30)
+                    && isOptionalString(request.resource.data, 'linkedType', 60)
+                    && isOptionalBool(request.resource.data, 'isKit')
+                    && isOptionalString(request.resource.data, 'parentKitId', 120)
+                    && isOptionalString(request.resource.data, 'kitRole', 50)
+                    && isOptionalString(request.resource.data, 'kitName', 100)
+                    && isOptionalString(request.resource.data, 'tel100DeviceId', 120)
+                    && isOptionalString(request.resource.data, 'tel100Tsadi', 50)
+                    && isOptionalString(request.resource.data, 'mabanDeviceId', 120)
+                    && isOptionalString(request.resource.data, 'mabanTsadi', 50)
+                    && isOptionalString(request.resource.data, 'tabletDeviceId', 120)
+                    && isOptionalString(request.resource.data, 'tabletTsadi', 50);
 
       allow update: if isValidString(request.resource.data.tsadiNumber, 1, 30)
                     && isValidString(request.resource.data.assignment, 1, 60)
                     && isOptionalString(request.resource.data, 'location', 100)
                     && isOptionalString(request.resource.data, 'faultStatus', 30)
-                    && isOptionalString(request.resource.data, 'faultNotes', 500);
+                    && isOptionalString(request.resource.data, 'faultNotes', 500)
+                    && isOptionalString(request.resource.data, 'notes', 500)
+                    && isOptionalString(request.resource.data, 'linkedDeviceId', 120)
+                    && isOptionalString(request.resource.data, 'linkedTsadi', 30)
+                    && isOptionalString(request.resource.data, 'linkedType', 60)
+                    && isOptionalBool(request.resource.data, 'isKit')
+                    && isOptionalString(request.resource.data, 'parentKitId', 120)
+                    && isOptionalString(request.resource.data, 'kitRole', 50)
+                    && isOptionalString(request.resource.data, 'kitName', 100)
+                    && isOptionalString(request.resource.data, 'tel100DeviceId', 120)
+                    && isOptionalString(request.resource.data, 'tel100Tsadi', 50)
+                    && isOptionalString(request.resource.data, 'mabanDeviceId', 120)
+                    && isOptionalString(request.resource.data, 'mabanTsadi', 50)
+                    && isOptionalString(request.resource.data, 'tabletDeviceId', 120)
+                    && isOptionalString(request.resource.data, 'tabletTsadi', 50);
 
       allow delete: if true;
     }

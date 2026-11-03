@@ -38,6 +38,9 @@ import { onSnapshot, doc } from 'firebase/firestore';
 import * as Clipboard from 'expo-clipboard';
 import AddDeviceModal from '../../../components/AddDeviceModal';
 import TransferDeviceModal from '../../../components/TransferDeviceModal';
+import EditNoteModal from '../../../components/EditNoteModal';
+import LinkMediaModal from '../../../components/LinkMediaModal';
+import ManageShakedKitModal from '../../../components/ManageShakedKitModal';
 import DeviceHistoryModal from '../../../components/DeviceHistoryModal';
 import Snackbar from '../../../components/Snackbar';
 import VerificationHistoryModal from '../../../components/VerificationHistoryModal';
@@ -46,6 +49,13 @@ import DailySummaryModal from '../../../components/DailySummaryModal';
 import ReportFaultModal from '../../../components/ReportFaultModal';
 import ReplaceDeviceModal from '../../../components/ReplaceDeviceModal';
 import OfflineBanner from '../../../components/OfflineBanner';
+import { comparePlatoons, compareEquipmentTypes, compareDevices, getEquipmentCategoryGroup } from '../../../utils';
+
+const isMediaSupportedHost = (type?: string) => {
+  if (!type) return false;
+  const t = type.toLowerCase();
+  return t.includes('מגן') || t.includes('מכלול') || t.includes('אלעד') || t.includes('שן בינה') || t.includes('בינה');
+};
 
 export default function KashragReportScreen() {
   const router = useRouter();
@@ -63,10 +73,13 @@ export default function KashragReportScreen() {
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [transferDevice, setTransferDevice] = useState<Device | null>(null);
+  const [noteDevice, setNoteDevice] = useState<Device | null>(null);
+  const [linkingDevice, setLinkingDevice] = useState<Device | null>(null);
   const [historyDevice, setHistoryDevice] = useState<Device | null>(null);
   const [faultModalDevice, setFaultModalDevice] = useState<Device | null>(null);
   const [isFaultModalVisible, setIsFaultModalVisible] = useState(false);
   const [replacingDevice, setReplacingDevice] = useState<Device | null>(null);
+  const [managingKitDevice, setManagingKitDevice] = useState<Device | null>(null);
   
   // Dual-Tab state ('report' vs 'inventory')
   const [activeTab, setActiveTab] = useState<'report' | 'inventory'>('report');
@@ -331,12 +344,34 @@ export default function KashragReportScreen() {
       (d.tsadiNumber && d.tsadiNumber.toLowerCase().includes(q)) ||
       (d.type && d.type.toLowerCase().includes(q)) ||
       (d.assignment && d.assignment.toLowerCase().includes(q)) ||
-      (d.location && d.location.toLowerCase().includes(q))
+      (d.location && d.location.toLowerCase().includes(q)) ||
+      (d.notes && d.notes.toLowerCase().includes(q)) ||
+      (d.linkedTsadi && d.linkedTsadi.toLowerCase().includes(q)) ||
+      (d.linkedType && d.linkedType.toLowerCase().includes(q)) ||
+      (d.kitName && d.kitName.toLowerCase().includes(q)) ||
+      (d.tel100Tsadi && d.tel100Tsadi.toLowerCase().includes(q)) ||
+      (d.mabanTsadi && d.mabanTsadi.toLowerCase().includes(q)) ||
+      (d.tabletTsadi && d.tabletTsadi.toLowerCase().includes(q))
     );
   }, [devices, searchQuery]);
 
   const groupedDevices = useMemo(() => {
-    return filteredDevices.reduce((acc, device) => {
+    const map = filteredDevices.reduce((acc, device) => {
+      // If this device is a media device that is ALREADY linked to a host device,
+      // it should NOT appear as its own standalone card!
+      // It is already registered and displayed directly under its host (Magen Michlol / Elad Yarok / Shen Bina).
+      const isMedia = (device.type || '').toLowerCase().includes('מדיה') || (device.type || '').toLowerCase().includes('נתיק');
+      const isLinkedMedia = isMedia && Boolean(device.linkedDeviceId || device.linkedTsadi);
+      if (isLinkedMedia) {
+        return acc;
+      }
+
+      // If this device is a member of a Shaked Kit (has parentKitId),
+      // it should NOT appear as its own standalone card! It is rendered inside the Shaked Kit card!
+      if (device.parentKitId) {
+        return acc;
+      }
+
       const key = groupBy === 'platoons' 
         ? (device.assignment || 'ללא שיוך') 
         : (device.type || 'אחר');
@@ -345,9 +380,26 @@ export default function KashragReportScreen() {
       acc[key].push(device);
       return acc;
     }, {} as Record<string, Device[]>);
+
+    // Sort items within each group using tactical ordering:
+    // - In 'types' mode (e.g. 710): sort by platoon order (פלוגה א -> ב -> ג -> ד -> פלסם -> צמה...)
+    // - In 'platoons' mode (e.g. פלוגה ג'): sort by equipment order (710 -> אולרים -> סלולר...)
+    Object.keys(map).forEach(key => {
+      map[key].sort((a, b) => compareDevices(a, b, groupBy));
+    });
+
+    return map;
   }, [filteredDevices, groupBy]);
 
-  const groupKeys = useMemo(() => Object.keys(groupedDevices).sort(), [groupedDevices]);
+  const groupKeys = useMemo(() => {
+    return Object.keys(groupedDevices).sort((a, b) => {
+      if (groupBy === 'platoons') {
+        return comparePlatoons(a, b);
+      } else {
+        return compareEquipmentTypes(a, b);
+      }
+    });
+  }, [groupedDevices, groupBy]);
 
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
 
@@ -425,8 +477,17 @@ export default function KashragReportScreen() {
       }
     });
 
+    // Also include any platoon that started verification in the active session
+    if (activeSession.platoons) {
+      Object.keys(activeSession.platoons).forEach(p => {
+        if (!totals[p]) {
+          totals[p] = 0;
+        }
+      });
+    }
+
     return {
-      platoons: Object.keys(totals).sort(),
+      platoons: Object.keys(totals).sort(comparePlatoons),
       platoonTotals: totals,
       platoonVerified: verifiedStats
     };
@@ -510,23 +571,112 @@ export default function KashragReportScreen() {
     });
 
     let reportText = '';
-    const sortedPlatoons = Object.keys(platoonGroups).sort();
+    // Sort platoons using the standardized tactical order (א -> ב -> ג -> ד -> מסייעת -> פלס"ם -> צמ"ה ...)
+    const sortedPlatoons = Object.keys(platoonGroups).sort(comparePlatoons);
     
+    // Set to keep track of rendered device IDs or keys to prevent duplicate rendering
+    const renderedDeviceKeys = new Set<string>();
+
     sortedPlatoons.forEach((platoon) => {
       reportText += `${platoon} :\n`;
       const pDevices = platoonGroups[platoon];
-      pDevices.sort((a, b) => (a.type || '').localeCompare(b.type || ''));
+      // Sort devices inside the platoon using tactical equipment order
+      pDevices.sort((a, b) => compareDevices(a, b, 'platoons'));
+
       pDevices.forEach(d => {
+        const deviceKey = d.id || `${d.type}_${d.tsadiNumber}`;
+        if (renderedDeviceKeys.has(deviceKey)) {
+          return;
+        }
+
+        // Check if this device is a Shaked Kit:
+        const isKit = d.isKit || (d.type || '').includes('שקד');
+        if (isKit) {
+          const locationPart = d.location ? ` (${d.location})` : '';
+          reportText += `${d.kitName || d.type || 'ערכת שקד'}${locationPart} :\n`;
+          renderedDeviceKeys.add(deviceKey);
+
+          // Slot 1: טל 100
+          if (d.tel100Tsadi || d.tel100DeviceId) {
+            const member = d.tel100DeviceId ? devices.find(x => x.id === d.tel100DeviceId) : undefined;
+            const tsadi = member?.tsadiNumber || d.tel100Tsadi || 'ללא צ';
+            const loc = member?.location || d.location;
+            const locPart = loc ? ` (${loc})` : '';
+            reportText += `  טל 100 - ${tsadi}${locPart}\n`;
+            const mKey = member?.id || (member ? `${member.type}_${member.tsadiNumber}` : `טל 100_${tsadi}`);
+            renderedDeviceKeys.add(mKey);
+          }
+
+          // Slot 2: מבן
+          if (d.mabanTsadi || d.mabanDeviceId) {
+            const member = d.mabanDeviceId ? devices.find(x => x.id === d.mabanDeviceId) : undefined;
+            const tsadi = member?.tsadiNumber || d.mabanTsadi || 'ללא צ';
+            const loc = member?.location || d.location;
+            const locPart = loc ? ` (${loc})` : '';
+            reportText += `  מבן - ${tsadi}${locPart}\n`;
+            const mKey = member?.id || (member ? `${member.type}_${member.tsadiNumber}` : `מבן_${tsadi}`);
+            renderedDeviceKeys.add(mKey);
+          }
+
+          // Slot 3: טאבלט
+          if (d.tabletTsadi || d.tabletDeviceId) {
+            const member = d.tabletDeviceId ? devices.find(x => x.id === d.tabletDeviceId) : undefined;
+            const tsadi = member?.tsadiNumber || d.tabletTsadi || 'ללא צ';
+            const loc = member?.location || d.location;
+            const locPart = loc ? ` (${loc})` : '';
+            reportText += `  טאבלט - ${tsadi}${locPart}\n`;
+            const mKey = member?.id || (member ? `${member.type}_${member.tsadiNumber}` : `טאבלט_${tsadi}`);
+            renderedDeviceKeys.add(mKey);
+          }
+
+          return;
+        }
+
         const locationPart = d.location ? ` (${d.location})` : '';
         reportText += `${d.type || 'אחר'} - ${d.tsadiNumber || 'ללא צ'}${locationPart}\n`;
+        renderedDeviceKeys.add(deviceKey);
+
+        // If this device is a host device (e.g. מגן מכלול / אלעד ירוק) with a linked media, render the media directly underneath
+        const isMedia = (d.type || '').toLowerCase().includes('מדיה');
+        if (!isMedia && (d.linkedDeviceId || d.linkedTsadi)) {
+          let linkedMedia: Device | undefined;
+          if (d.linkedDeviceId) {
+            linkedMedia = devices.find(x => x.id === d.linkedDeviceId);
+          }
+          if (!linkedMedia && d.linkedTsadi) {
+            linkedMedia = devices.find(x => x.tsadiNumber === d.linkedTsadi && (x.type || '').includes('מדיה'));
+          }
+
+          const mediaType = linkedMedia?.type || d.linkedType || 'מדיה';
+          const mediaTsadi = linkedMedia?.tsadiNumber || d.linkedTsadi || 'ללא צ';
+          const mediaLoc = linkedMedia?.location || d.location;
+          const mediaLocPart = mediaLoc ? ` (${mediaLoc})` : '';
+
+          reportText += `  ${mediaType} - ${mediaTsadi}${mediaLocPart}\n`;
+
+          const mediaKey = linkedMedia?.id || (linkedMedia ? `${linkedMedia.type}_${linkedMedia.tsadiNumber}` : (d.linkedTsadi ? `מדיה_${d.linkedTsadi}` : ''));
+          if (mediaKey) {
+            renderedDeviceKeys.add(mediaKey);
+          }
+        }
       });
       reportText += '\n';
     });
 
     try {
-      await Clipboard.setStringAsync(reportText.trimEnd());
+      const textToCopy = reportText.trimEnd();
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(textToCopy);
+        } catch {
+          await Clipboard.setStringAsync(textToCopy);
+        }
+      } else {
+        await Clipboard.setStringAsync(textToCopy);
+      }
       setSnackbarVisible(true);
-    } catch {
+    } catch (err) {
+      console.error('Failed to copy report:', err);
       Alert.alert('שגיאה', 'לא הצלחנו להעתיק את הדו"ח ללוח.');
     }
   };
@@ -696,17 +846,172 @@ export default function KashragReportScreen() {
     );
   }, [toggleSection]);
 
-  const renderDeviceItem = useCallback(({ item: device }: { item: Device }) => {
+  const renderDeviceItem = useCallback(({ item: device, index, section }: { item: Device; index: number; section: any }) => {
+    const currentCat = getEquipmentCategoryGroup(device);
+    const prevDevice = section?.data && index > 0 ? section.data[index - 1] : undefined;
+    const prevCat = prevDevice ? getEquipmentCategoryGroup(prevDevice) : undefined;
+    const showCategoryDivider = groupBy === 'platoons' && (!prevCat || prevCat.id !== currentCat.id);
+
+    const categoryDivider = showCategoryDivider ? (
+      <View style={styles.categoryDividerContainer}>
+        <View style={styles.categoryDividerLine} />
+        <View style={styles.categoryBadge}>
+          <MaterialCommunityIcons name={currentCat.iconName as any} size={13} color="#0369A1" />
+          <Text style={styles.categoryBadgeText}>{currentCat.title}</Text>
+        </View>
+        <View style={styles.categoryDividerLine} />
+      </View>
+    ) : null;
+
+    // 1. Specialized Shaked Kit Card
+    if (device.isKit || (device.type || '').includes('שקד')) {
+      const tel100Tsadi = device.tel100Tsadi;
+      const mabanTsadi = device.mabanTsadi;
+      const tabletTsadi = device.tabletTsadi;
+
+      const tel100Dev = tel100Tsadi ? devices.find(d => d.id === device.tel100DeviceId || (d.tsadiNumber === tel100Tsadi && (d.type || '').includes('טל 100'))) : null;
+      const mabanDev = mabanTsadi ? devices.find(d => d.id === device.mabanDeviceId || (d.tsadiNumber === mabanTsadi && (d.type || '').includes('מבן'))) : null;
+      const tabletDev = tabletTsadi ? devices.find(d => d.id === device.tabletDeviceId || (d.tsadiNumber === tabletTsadi && (d.type || '').includes('טאבלט'))) : null;
+
+      const hasAnyFault = tel100Dev?.faultStatus || mabanDev?.faultStatus || tabletDev?.faultStatus;
+
+      return (
+        <View key={device.id || `${device.type}_${device.tsadiNumber}`}>
+          {categoryDivider}
+          <View style={[styles.deviceCard, styles.shakedKitCard]}>
+          <View style={styles.deviceCardHeader}>
+            <View style={styles.deviceInfoGroup}>
+              <View style={styles.deviceTitleRow}>
+                <View style={styles.kitBadge}>
+                  <MaterialCommunityIcons name="toolbox" size={13} color="#0284C7" />
+                  <Text style={styles.kitBadgeText}>מארז שקד</Text>
+                </View>
+                <Text style={styles.deviceType}>{device.kitName || device.tsadiNumber || 'ערכת שקד'}</Text>
+              </View>
+
+              <View style={styles.deviceMetaRow}>
+                <View style={styles.metaTag}>
+                  <Feather name="shield" size={11} color="#64748B" />
+                  <Text style={styles.metaTagText}>{device.assignment || 'ללא שיוך'}</Text>
+                </View>
+                {device.location ? (
+                  <View style={styles.metaTag}>
+                    <Feather name="map-pin" size={11} color="#0284C7" />
+                    <Text style={[styles.metaTagText, { color: '#0284C7' }]}>{device.location}</Text>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+
+            {hasAnyFault && (
+              <View style={styles.faultHeaderPill}>
+                <View style={styles.badgeInspection}>
+                  <Feather name="alert-triangle" size={11} color="#B45309" />
+                  <Text style={styles.badgeInspectionText}>תקלה בערכה</Text>
+                </View>
+              </View>
+            )}
+          </View>
+
+          {/* 3 Kit Slots Display */}
+          <View style={styles.kitSlotsContainer}>
+            {/* Slot 1: טל 100 */}
+            <View style={styles.kitSlotRow}>
+              <View style={styles.kitSlotIcon}>
+                <Feather name="phone" size={12} color="#0284C7" />
+              </View>
+              <Text style={styles.kitSlotLabel}>טל 100:</Text>
+              <Text style={[styles.kitSlotValue, !tel100Tsadi && { color: '#94A3B8' }]}>
+                {tel100Tsadi ? `צ׳ ${tel100Tsadi}` : 'חסר'}
+              </Text>
+              {tel100Dev?.faultStatus && (
+                <View style={styles.slotFaultPill}>
+                  <Text style={styles.slotFaultText}>{tel100Dev.faultStatus === 'replacement' ? 'להחלפה' : 'בדיקה'}</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Slot 2: מבן */}
+            <View style={styles.kitSlotRow}>
+              <View style={styles.kitSlotIcon}>
+                <MaterialCommunityIcons name="power-plug" size={12} color="#0284C7" />
+              </View>
+              <Text style={styles.kitSlotLabel}>מבן:</Text>
+              <Text style={[styles.kitSlotValue, !mabanTsadi && { color: '#94A3B8' }]}>
+                {mabanTsadi ? `צ׳ ${mabanTsadi}` : 'חסר'}
+              </Text>
+              {mabanDev?.faultStatus && (
+                <View style={styles.slotFaultPill}>
+                  <Text style={styles.slotFaultText}>{mabanDev.faultStatus === 'replacement' ? 'להחלפה' : 'בדיקה'}</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Slot 3: טאבלט */}
+            <View style={styles.kitSlotRow}>
+              <View style={styles.kitSlotIcon}>
+                <Feather name="tablet" size={12} color="#0284C7" />
+              </View>
+              <Text style={styles.kitSlotLabel}>טאבלט:</Text>
+              <Text style={[styles.kitSlotValue, !tabletTsadi && { color: '#94A3B8' }]}>
+                {tabletTsadi ? `צ׳ ${tabletTsadi}` : 'חסר'}
+              </Text>
+              {tabletDev?.faultStatus && (
+                <View style={styles.slotFaultPill}>
+                  <Text style={styles.slotFaultText}>{tabletDev.faultStatus === 'replacement' ? 'להחלפה' : 'בדיקה'}</Text>
+                </View>
+              )}
+            </View>
+          </View>
+
+          {/* Action Strip */}
+          <View style={styles.deviceActionsStrip}>
+            <TouchableOpacity 
+              style={[styles.actionBtnIcon, styles.actionBtnIconBlue]} 
+              onPress={() => setManagingKitDevice(device)}
+              activeOpacity={0.8}
+              accessibilityLabel="ניהול פריטי הערכה"
+            >
+              <MaterialCommunityIcons name="toolbox-outline" size={14} color="#0284C7" />
+              <Text style={[styles.actionBtnIconText, { color: '#0284C7', fontWeight: 'bold' }]}>
+                ניהול והחלפת פריטים
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.actionBtnIcon} 
+              onPress={() => setTransferDevice(device)}
+              activeOpacity={0.8}
+            >
+              <Feather name="repeat" size={14} color="#0F172A" />
+              <Text style={styles.actionBtnIconText}>העבר פלוגה</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.actionBtnIcon, styles.actionBtnIconDanger]} 
+              onPress={() => device.id && handleDelete(device.id)}
+              activeOpacity={0.8}
+            >
+              <Feather name="trash-2" size={14} color="#DC2626" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+      );
+    }
+
     const fault = device.faultStatus;
 
     return (
-      <View 
-        style={[
-          styles.deviceCard,
-          fault === 'inspection' && styles.deviceCardInspection,
-          fault === 'replacement' && styles.deviceCardReplacement
-        ]}
-      >
+      <View key={device.id || `${device.type}_${device.tsadiNumber}`}>
+        {categoryDivider}
+        <View 
+          style={[
+            styles.deviceCard,
+            fault === 'inspection' && styles.deviceCardInspection,
+            fault === 'replacement' && styles.deviceCardReplacement
+          ]}
+        >
         <View style={styles.deviceCardHeader}>
           <View style={styles.deviceInfoGroup}>
             <View style={styles.deviceTitleRow}>
@@ -728,6 +1033,52 @@ export default function KashragReportScreen() {
                 </View>
               ) : null}
             </View>
+
+            {/* Kashrag Private Note Badge */}
+            {device.notes ? (
+              <TouchableOpacity 
+                style={styles.deviceNoteBadge}
+                onPress={() => setNoteDevice(device)}
+                activeOpacity={0.7}
+                accessibilityLabel="ערוך הערה"
+              >
+                <Feather name="file-text" size={12} color="#D97706" style={{ marginLeft: 5 }} />
+                <Text style={styles.deviceNoteText} numberOfLines={2}>
+                  {device.notes}
+                </Text>
+                <Feather name="edit-2" size={11} color="#B45309" style={{ marginRight: 'auto', opacity: 0.7 }} />
+              </TouchableOpacity>
+            ) : null}
+
+            {/* Linked Media Badge */}
+            {device.linkedTsadi ? (
+              <TouchableOpacity 
+                style={styles.linkedMediaBadge}
+                onPress={() => setLinkingDevice(device)}
+                activeOpacity={0.75}
+                accessibilityLabel="ניהול צימוד מדיה"
+              >
+                <Feather name="link-2" size={12} color="#0284C7" style={{ marginLeft: 5 }} />
+                <Text style={styles.linkedMediaText} numberOfLines={1}>
+                  {(device.type || '').toLowerCase().includes('מדיה')
+                    ? `מותקנת על: ${device.linkedType || 'מגן מכלול'} (צ׳ ${device.linkedTsadi})`
+                    : `מדיה מחוברת: צ׳ ${device.linkedTsadi}`}
+                </Text>
+                <View style={styles.linkedMediaActionPill}>
+                  <Text style={styles.linkedMediaActionText}>החלף/נתק</Text>
+                </View>
+              </TouchableOpacity>
+            ) : isMediaSupportedHost(device.type) ? (
+              <TouchableOpacity 
+                style={styles.unlinkedMediaBadge}
+                onPress={() => setLinkingDevice(device)}
+                activeOpacity={0.75}
+                accessibilityLabel="חבר מדיה"
+              >
+                <Feather name="plus-circle" size={12} color="#0284C7" style={{ marginLeft: 5 }} />
+                <Text style={styles.unlinkedMediaText}>+ חבר מדיה</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
 
           {/* Fault Banner Pills */}
@@ -800,6 +1151,32 @@ export default function KashragReportScreen() {
             <Text style={styles.actionBtnIconText}>העבר פלוגה</Text>
           </TouchableOpacity>
 
+          {isMediaSupportedHost(device.type) && (
+            <TouchableOpacity 
+              style={[styles.actionBtnIcon, device.linkedTsadi ? styles.actionBtnIconBlue : null]} 
+              onPress={() => setLinkingDevice(device)}
+              activeOpacity={0.8}
+              accessibilityLabel="צימוד מדיה"
+            >
+              <Feather name="link" size={14} color={device.linkedTsadi ? '#0284C7' : '#0F172A'} />
+              <Text style={[styles.actionBtnIconText, device.linkedTsadi && { color: '#0284C7', fontWeight: 'bold' }]}>
+                {device.linkedTsadi ? 'ערוך צימוד' : 'חבר מדיה'}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity 
+            style={[styles.actionBtnIcon, device.notes ? styles.actionBtnIconAmber : null]} 
+            onPress={() => setNoteDevice(device)}
+            activeOpacity={0.8}
+            accessibilityLabel={device.notes ? 'ערוך הערה' : 'הוסף הערה'}
+          >
+            <Feather name="file-text" size={14} color={device.notes ? '#B45309' : '#0F172A'} />
+            <Text style={[styles.actionBtnIconText, device.notes && { color: '#B45309', fontWeight: 'bold' }]}>
+              {device.notes ? 'ערוך הערה' : 'הערה'}
+            </Text>
+          </TouchableOpacity>
+
           <TouchableOpacity 
             style={styles.actionBtnIcon} 
             onPress={() => setHistoryDevice(device)}
@@ -818,8 +1195,9 @@ export default function KashragReportScreen() {
           </TouchableOpacity>
         </View>
       </View>
+    </View>
     );
-  }, [confirmMarkFixed, handleDelete]);
+  }, [confirmMarkFixed, handleDelete, groupBy]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -1062,6 +1440,23 @@ export default function KashragReportScreen() {
                     </TouchableOpacity>
                   )}
                 </View>
+
+                {searchQuery.trim().length > 0 && (
+                  <View style={styles.searchFeedbackRow}>
+                    <Text style={styles.searchFeedbackText}>
+                      מסנן לפי: "{searchQuery}" ({filteredDevices.length} פריטים)
+                    </Text>
+                    <TouchableOpacity 
+                      onPress={() => {
+                        setSearchQuery('');
+                        setExpandedSections(new Set());
+                      }}
+                      style={styles.resetSearchLink}
+                    >
+                      <Text style={styles.resetSearchLinkText}>הצג את כל הציוד</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
                 
                 <View style={styles.groupingToggle}>
                   <TouchableOpacity 
@@ -1099,14 +1494,44 @@ export default function KashragReportScreen() {
       <AddDeviceModal 
         visible={modalVisible} 
         onClose={() => setModalVisible(false)} 
-        onAdded={fetchDevices} 
+        onAdded={() => {
+          setSearchQuery('');
+          fetchDevices();
+        }}
+        allDevices={devices}
       />
 
       <TransferDeviceModal
         device={transferDevice}
         visible={!!transferDevice}
         onClose={() => setTransferDevice(null)}
-        onTransfer={fetchDevices}
+        onTransfer={() => {
+          setTransferDevice(null);
+          setSearchQuery('');
+          setExpandedSections(new Set());
+          fetchDevices();
+        }}
+      />
+
+      <EditNoteModal
+        device={noteDevice}
+        visible={!!noteDevice}
+        onClose={() => setNoteDevice(null)}
+        onSaved={() => {
+          setNoteDevice(null);
+          fetchDevices();
+        }}
+      />
+
+      <LinkMediaModal
+        hostDevice={linkingDevice}
+        visible={!!linkingDevice}
+        onClose={() => setLinkingDevice(null)}
+        onLinked={() => {
+          setLinkingDevice(null);
+          fetchDevices();
+        }}
+        allDevices={devices}
       />
       
       <DeviceHistoryModal
@@ -1141,7 +1566,27 @@ export default function KashragReportScreen() {
         visible={!!replacingDevice}
         device={replacingDevice}
         onClose={() => setReplacingDevice(null)}
-        onReplaced={fetchDevices}
+        onReplaced={() => {
+          setReplacingDevice(null);
+          setSearchQuery('');
+          fetchDevices();
+        }}
+      />
+
+      <ManageShakedKitModal
+        visible={!!managingKitDevice}
+        kitDevice={managingKitDevice}
+        onClose={() => setManagingKitDevice(null)}
+        onUpdated={() => {
+          setManagingKitDevice(null);
+          fetchDevices();
+        }}
+        allDevices={devices}
+        onReportFault={(d) => {
+          setFaultModalDevice(d);
+          setIsFaultModalVisible(true);
+        }}
+        onReplaceDevice={(d) => setReplacingDevice(d)}
       />
 
       <Snackbar 
@@ -1802,6 +2247,27 @@ const styles = StyleSheet.create({
   clearSearchBtn: {
     padding: 4,
   },
+  searchFeedbackRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 2,
+    marginTop: -4,
+    marginBottom: 4,
+  },
+  searchFeedbackText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  resetSearchLink: {
+    padding: 2,
+  },
+  resetSearchLinkText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#15803D',
+  },
   groupingToggle: {
     flexDirection: 'row',
     backgroundColor: '#F1F5F9',
@@ -1944,6 +2410,73 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#475569',
   },
+  deviceNoteBadge: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginTop: 6,
+    gap: 4,
+  },
+  deviceNoteText: {
+    fontSize: 11,
+    color: '#92400E',
+    fontWeight: '600',
+    flex: 1,
+    textAlign: 'right',
+  },
+  linkedMediaBadge: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginTop: 5,
+    gap: 4,
+  },
+  linkedMediaText: {
+    fontSize: 11,
+    color: '#0369A1',
+    fontWeight: '700',
+    flex: 1,
+    textAlign: 'right',
+  },
+  linkedMediaActionPill: {
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  linkedMediaActionText: {
+    fontSize: 10,
+    color: '#0284C7',
+    fontWeight: 'bold',
+  },
+  unlinkedMediaBadge: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#BAE6FD',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginTop: 5,
+    alignSelf: 'flex-start',
+  },
+  unlinkedMediaText: {
+    fontSize: 11,
+    color: '#0284C7',
+    fontWeight: '600',
+  },
 
   faultHeaderPill: {
     marginLeft: 6,
@@ -2011,8 +2544,87 @@ const styles = StyleSheet.create({
     backgroundColor: '#FEE2E2',
     borderColor: '#FECACA',
   },
+  actionBtnIconAmber: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FDE68A',
+  },
+  actionBtnIconBlue: {
+    backgroundColor: '#E0F2FE',
+    borderColor: '#BAE6FD',
+  },
   actionBtnIconDanger: {
     paddingHorizontal: 8,
+  },
+
+  /* Shaked Kit Styles */
+  shakedKitCard: {
+    borderColor: '#BAE6FD',
+    borderLeftWidth: 4,
+    borderLeftColor: '#0284C7',
+    backgroundColor: '#FAFDFE',
+  },
+  kitBadge: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    gap: 4,
+  },
+  kitBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#0369A1',
+  },
+  kitSlotsContainer: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    padding: 10,
+    marginVertical: 8,
+    gap: 8,
+  },
+  kitSlotRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 8,
+  },
+  kitSlotIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#F0F9FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kitSlotLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+    minWidth: 50,
+    textAlign: 'right',
+  },
+  kitSlotValue: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A',
+    flex: 1,
+    textAlign: 'right',
+  },
+  slotFaultPill: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 0.5,
+    borderColor: '#FDE68A',
+  },
+  slotFaultText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#B45309',
   },
 
   emptyInventoryCard: {
@@ -2105,5 +2717,34 @@ const styles = StyleSheet.create({
     backgroundColor: '#15803D',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  categoryDividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 14,
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  categoryDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E2E8F0',
+  },
+  categoryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F9FF',
+    borderColor: '#BAE6FD',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 3,
+    paddingHorizontal: 10,
+    marginHorizontal: 8,
+    gap: 5,
+  },
+  categoryBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0369A1',
   },
 });

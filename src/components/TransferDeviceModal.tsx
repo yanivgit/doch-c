@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, Modal, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, Modal, KeyboardAvoidingView, Platform, ScrollView, TextInput } from 'react-native';
 import SearchableDropdown from './SearchableDropdown';
 import { updateDeviceAssignmentAndLocation, Device } from '../firebase/api';
 import { useApp } from '../context/AppContext';
@@ -16,6 +16,8 @@ export default function TransferDeviceModal({ device, visible, onClose, onTransf
   const { userRole, selectedPlatoon, getAllPlatoons, getLocationsForPlatoon, learnNewOption } = useApp();
   const [pluga, setPluga] = useState('');
   const [location, setLocation] = useState('');
+  const [notes, setNotes] = useState('');
+  const [transferLinked, setTransferLinked] = useState(true);
   const [loading, setLoading] = useState(false);
 
   // Set initial platoon and location
@@ -23,6 +25,8 @@ export default function TransferDeviceModal({ device, visible, onClose, onTransf
     if (device && visible) {
       setPluga(device.assignment || '');
       setLocation(device.location || '');
+      setNotes(device.notes || '');
+      setTransferLinked(true);
     }
   }, [device, visible]);
 
@@ -39,7 +43,17 @@ export default function TransferDeviceModal({ device, visible, onClose, onTransf
         ? (selectedPlatoon ? `קשפ"ל_${selectedPlatoon}` : 'קשפ"ל')
         : 'קשר"ג';
 
-      await updateDeviceAssignmentAndLocation(device.id, pluga, location.trim(), currentUser);
+      const notesToSave = userRole === 'Kashrag' ? notes.trim() : undefined;
+      await updateDeviceAssignmentAndLocation(device.id, pluga, location.trim(), currentUser, notesToSave);
+      
+      // If user chose to transfer the linked paired media/host as well
+      if (transferLinked && device.linkedDeviceId) {
+        try {
+          await updateDeviceAssignmentAndLocation(device.linkedDeviceId, pluga, location.trim(), currentUser);
+        } catch (e) {
+          console.error("Error transferring linked device:", e);
+        }
+      }
       
       // Learn new options
       learnNewOption('platoon', pluga.trim());
@@ -87,10 +101,15 @@ export default function TransferDeviceModal({ device, visible, onClose, onTransf
               data={getAllPlatoons()}
               value={pluga}
               onSelect={(newPlatoon) => {
-                setPluga(newPlatoon);
+                const clean = newPlatoon.trim();
+                setPluga(clean);
+                if (clean && clean !== 'ללא שיוך') {
+                  learnNewOption('platoon', clean);
+                }
                 setLocation(''); // Immediately clear location state when destination platoon changes
               }}
-              placeholder="חפש ובחר פלוגה..."
+              placeholder="חפש או הקלד פלוגה חדשה..."
+              allowFreeText={true}
             />
 
             <Text style={styles.label}>בחר או הקלד מיקום חדש (אופציונלי)</Text>
@@ -101,6 +120,46 @@ export default function TransferDeviceModal({ device, visible, onClose, onTransf
               placeholder="בחר מיקום..."
               allowFreeText={true}
             />
+
+            {userRole === 'Kashrag' && (
+              <View style={styles.notesContainer}>
+                <View style={styles.notesHeaderRow}>
+                  <Text style={styles.notesBadge}>קשר"ג בלבד</Text>
+                  <Text style={styles.label}>הערה לציוד (אופציונלי)</Text>
+                </View>
+                <TextInput
+                  style={styles.notesInput}
+                  value={notes}
+                  onChangeText={setNotes}
+                  placeholder="הוסף הערה (למשל: במקור פלוגה ב)..."
+                  placeholderTextColor="#94A3B8"
+                  maxLength={500}
+                  multiline={true}
+                  numberOfLines={2}
+                  textAlign="right"
+                />
+              </View>
+            )}
+
+            {device.linkedTsadi ? (
+              <TouchableOpacity 
+                style={styles.transferLinkedOption}
+                onPress={() => setTransferLinked(prev => !prev)}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.checkboxSquare, transferLinked && styles.checkboxSquareSelected]}>
+                  {transferLinked && <Text style={styles.checkmarkText}>✓</Text>}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.transferLinkedTitle}>
+                    העבר יחד את {device.linkedType || 'המדיה'} המקושרת (צ׳ {device.linkedTsadi})
+                  </Text>
+                  <Text style={styles.transferLinkedSub}>
+                    הפריט המקושר יועבר אוטומטית לאותה פלוגה ומיקום
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ) : null}
 
             <TouchableOpacity 
               style={[styles.button, (!isValid || loading) && styles.buttonDisabled]} 
@@ -180,6 +239,76 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     color: theme.colors.text,
     fontWeight: 'bold',
+  },
+  notesContainer: {
+    marginTop: 6,
+    marginBottom: 12,
+  },
+  notesHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  notesBadge: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#D97706',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  notesInput: {
+    backgroundColor: theme.colors.background,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.sm,
+    padding: 10,
+    fontSize: 15,
+    color: theme.colors.text,
+    minHeight: 50,
+  },
+  transferLinkedOption: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    borderRadius: theme.borderRadius.sm,
+    padding: 12,
+    marginBottom: 12,
+    gap: 10,
+  },
+  checkboxSquare: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#0284C7',
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxSquareSelected: {
+    backgroundColor: '#0284C7',
+  },
+  checkmarkText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  transferLinkedTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#0369A1',
+    textAlign: 'right',
+  },
+  transferLinkedSub: {
+    fontSize: 12,
+    color: '#0284C7',
+    textAlign: 'right',
+    marginTop: 2,
   },
   button: {
     backgroundColor: theme.colors.primary,

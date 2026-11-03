@@ -182,6 +182,7 @@ export default function RapidSetupScreen() {
                 value={tzadeNumber}
                 onChangeText={setTzadeNumber}
                 keyboardType="numeric"
+                inputMode="numeric"
                 onSubmitEditing={handleAddDevice}
                 returnKeyType="done"
               />
@@ -196,8 +197,15 @@ export default function RapidSetupScreen() {
               <SearchableDropdown
                 data={getAllPlatoons()}
                 value={pluga}
-                onSelect={setPluga}
-                placeholder="בחר פלוגה (אופציונלי)..."
+                onSelect={(selected) => {
+                  const clean = selected.trim();
+                  setPluga(clean);
+                  if (clean && clean !== 'מחלקת קשר' && clean !== 'ללא שיוך') {
+                    learnNewOption('platoon', clean);
+                  }
+                }}
+                allowFreeText={true}
+                placeholder="בחר או הקלד פלוגה חדשה..."
               />
             </View>
 

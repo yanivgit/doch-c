@@ -2,9 +2,10 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth } from '../firebase/config';
 import { signOut } from 'firebase/auth';
-import { fetchMetadata, learnMetadata, BattalionMetadata } from '../firebase/api';
-import { EQUIPMENT_TYPES, PLUGOT_WITH_UNASSIGNED } from '../constants/data';
+import { fetchMetadata, learnMetadata, subscribeToMetadata, BattalionMetadata } from '../firebase/api';
+import { EQUIPMENT_TYPES, PLUGOT, PLUGOT_WITH_UNASSIGNED } from '../constants/data';
 import { getLocationsForPlatoon as getStaticLocationsForPlatoon } from '../utils/locations';
+import { comparePlatoons } from '../utils/sorting';
 
 export type UserRole = 'Kashpal' | 'Kashrag';
 
@@ -23,6 +24,7 @@ interface AppContextState {
   // Dynamic Learning
   getAllEquipmentTypes: () => string[];
   getAllPlatoons: () => string[];
+  getKashpalPlatoons: () => string[];
   getLocationsForPlatoon: (platoon: string) => string[];
   learnNewOption: (category: 'equipment' | 'platoon' | 'location', value: string, platoonContext?: string) => void;
 }
@@ -77,6 +79,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     };
 
     loadInitialState();
+
+    const unsubscribe = subscribeToMetadata((metadata) => {
+      if (metadata) {
+        setLearnedMetadata(metadata);
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const login = useCallback((role: UserRole) => {
@@ -98,14 +108,88 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [userRole]);
 
+  // --- Dynamic Learning Methods ---
+  
+  const getAllEquipmentTypes = useCallback(() => {
+    const combined = [...EQUIPMENT_TYPES, ...(learnedMetadata.equipmentTypes || [])];
+    return Array.from(new Set(combined)); // Deduplicate
+  }, [learnedMetadata.equipmentTypes]);
+
+  const getAllPlatoons = useCallback(() => {
+    const combined = [...PLUGOT_WITH_UNASSIGNED, ...(learnedMetadata.platoons || [])];
+    return Array.from(new Set(combined.filter(Boolean))).sort(comparePlatoons);
+  }, [learnedMetadata.platoons]);
+
+  const getKashpalPlatoons = useCallback(() => {
+    const combined = [...PLUGOT, ...(learnedMetadata.platoons || [])];
+    return Array.from(new Set(combined.filter(p => p && p !== 'ללא שיוך'))).sort(comparePlatoons);
+  }, [learnedMetadata.platoons]);
+
+  const getLocationsForPlatoon = useCallback((platoon: string) => {
+    const staticLocations = getStaticLocationsForPlatoon(platoon);
+    const learnedForPlatoon = learnedMetadata.locations[platoon] || [];
+    const learnedDefault = learnedMetadata.locations['__default'] || [];
+    
+    const combined = [...staticLocations, ...learnedForPlatoon, ...learnedDefault];
+    return Array.from(new Set(combined));
+  }, [learnedMetadata.locations]);
+
+  const learnNewOption = useCallback((category: 'equipment' | 'platoon' | 'location', value: string, platoonContext?: string) => {
+    const trimmedValue = value.trim();
+    if (!trimmedValue) return;
+
+    let isNew = false;
+
+    setLearnedMetadata(prev => {
+      const newState = { ...prev };
+      
+      if (category === 'equipment') {
+        const allTypes = [...EQUIPMENT_TYPES, ...(newState.equipmentTypes || [])];
+        if (!allTypes.includes(trimmedValue)) {
+          newState.equipmentTypes = [...(newState.equipmentTypes || []), trimmedValue];
+          isNew = true;
+        }
+      } else if (category === 'platoon') {
+        const allPlatoons = [...PLUGOT_WITH_UNASSIGNED, ...(newState.platoons || [])];
+        if (!allPlatoons.includes(trimmedValue)) {
+          newState.platoons = [...(newState.platoons || []), trimmedValue];
+          isNew = true;
+        }
+      } else if (category === 'location') {
+        const key = platoonContext || '__default';
+        const currentLocs = newState.locations[key] || [];
+        const staticLocs = platoonContext ? getStaticLocationsForPlatoon(platoonContext) : [];
+        
+        if (!currentLocs.includes(trimmedValue) && !staticLocs.includes(trimmedValue)) {
+          newState.locations = {
+            ...newState.locations,
+            [key]: [...currentLocs, trimmedValue]
+          };
+          isNew = true;
+        }
+      }
+
+      return newState;
+    });
+
+    if (isNew) {
+      // Fire and forget to persistent storage
+      learnMetadata(category, trimmedValue, platoonContext).catch(console.error);
+    }
+  }, []);
+
   const selectPlatoon = useCallback(async (platoon: string) => {
+    const clean = platoon.trim();
     try {
-      await AsyncStorage.setItem(PLATOON_KEY, platoon);
-      setSelectedPlatoon(platoon);
+      await AsyncStorage.setItem(PLATOON_KEY, clean);
+      setSelectedPlatoon(clean);
+      if (clean && clean !== 'ללא שיוך') {
+        learnNewOption('platoon', clean);
+      }
     } catch (error) {
       console.error('Error saving platoon state:', error);
     }
-  }, []);
+  }, [learnNewOption]);
 
   const clearDoh = useCallback(async () => {
     try {
@@ -133,71 +217,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
-  // --- Dynamic Learning Methods ---
-  
-  const getAllEquipmentTypes = useCallback(() => {
-    const combined = [...EQUIPMENT_TYPES, ...learnedMetadata.equipmentTypes];
-    return Array.from(new Set(combined)); // Deduplicate
-  }, [learnedMetadata.equipmentTypes]);
-
-  const getAllPlatoons = useCallback(() => {
-    const combined = [...PLUGOT_WITH_UNASSIGNED, ...learnedMetadata.platoons];
-    return Array.from(new Set(combined));
-  }, [learnedMetadata.platoons]);
-
-  const getLocationsForPlatoon = useCallback((platoon: string) => {
-    const staticLocations = getStaticLocationsForPlatoon(platoon);
-    const learnedForPlatoon = learnedMetadata.locations[platoon] || [];
-    const learnedDefault = learnedMetadata.locations['__default'] || [];
-    
-    const combined = [...staticLocations, ...learnedForPlatoon, ...learnedDefault];
-    return Array.from(new Set(combined));
-  }, [learnedMetadata.locations]);
-
-  const learnNewOption = useCallback((category: 'equipment' | 'platoon' | 'location', value: string, platoonContext?: string) => {
-    const trimmedValue = value.trim();
-    if (!trimmedValue) return;
-
-    let isNew = false;
-
-    setLearnedMetadata(prev => {
-      const newState = { ...prev };
-      
-      if (category === 'equipment') {
-        const allTypes = [...EQUIPMENT_TYPES, ...newState.equipmentTypes];
-        if (!allTypes.includes(trimmedValue)) {
-          newState.equipmentTypes = [...newState.equipmentTypes, trimmedValue];
-          isNew = true;
-        }
-      } else if (category === 'platoon') {
-        const allPlatoons = [...PLUGOT_WITH_UNASSIGNED, ...newState.platoons];
-        if (!allPlatoons.includes(trimmedValue)) {
-          newState.platoons = [...newState.platoons, trimmedValue];
-          isNew = true;
-        }
-      } else if (category === 'location') {
-        const key = platoonContext || '__default';
-        const currentLocs = newState.locations[key] || [];
-        const staticLocs = platoonContext ? getStaticLocationsForPlatoon(platoonContext) : [];
-        
-        if (!currentLocs.includes(trimmedValue) && !staticLocs.includes(trimmedValue)) {
-          newState.locations = {
-            ...newState.locations,
-            [key]: [...currentLocs, trimmedValue]
-          };
-          isNew = true;
-        }
-      }
-
-      return newState;
-    });
-
-    if (isNew) {
-      // Fire and forget to persistent storage
-      learnMetadata(category, trimmedValue, platoonContext).catch(console.error);
-    }
-  }, []);
-
   const value = useMemo<AppContextState>(() => ({
     userRole,
     selectedDohId,
@@ -211,9 +230,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     logout,
     getAllEquipmentTypes,
     getAllPlatoons,
+    getKashpalPlatoons,
     getLocationsForPlatoon,
     learnNewOption
-  }), [userRole, selectedDohId, selectedDohName, selectedPlatoon, isLoading, login, selectDoh, selectPlatoon, clearDoh, logout, getAllEquipmentTypes, getAllPlatoons, getLocationsForPlatoon, learnNewOption]);
+  }), [userRole, selectedDohId, selectedDohName, selectedPlatoon, isLoading, login, selectDoh, selectPlatoon, clearDoh, logout, getAllEquipmentTypes, getAllPlatoons, getKashpalPlatoons, getLocationsForPlatoon, learnNewOption]);
 
   return (
     <AppContext.Provider value={value}>

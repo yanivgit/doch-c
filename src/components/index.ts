@@ -1,8 +1,11 @@
 // Modals
 export { default as AddDeviceModal } from './AddDeviceModal';
+export { default as ManageShakedKitModal } from './ManageShakedKitModal';
 export { default as DailySummaryModal } from './DailySummaryModal';
 export { default as DeviceHistoryModal } from './DeviceHistoryModal';
 export { default as EditLocationModal } from './EditLocationModal';
+export { default as EditNoteModal } from './EditNoteModal';
+export { default as LinkMediaModal } from './LinkMediaModal';
 export { default as ReplaceDeviceModal } from './ReplaceDeviceModal';
 export { default as ReportFaultModal } from './ReportFaultModal';
 export { default as TransferDeviceModal } from './TransferDeviceModal';

@@ -2,8 +2,9 @@ import {
   doc, 
   getDoc, 
   setDoc, 
-  updateDoc, 
-  arrayUnion 
+  arrayUnion,
+  onSnapshot,
+  Unsubscribe 
 } from 'firebase/firestore';
 import { db } from '../config';
 import { BattalionMetadata, MetadataCategory } from '../../types';
@@ -23,6 +24,25 @@ export const fetchMetadata = async (): Promise<BattalionMetadata | null> => {
   }
 };
 
+export const subscribeToMetadata = (
+  onUpdate: (metadata: BattalionMetadata) => void,
+  onError?: (error: Error) => void
+): Unsubscribe => {
+  const docRef = doc(db, 'battalion_settings', 'metadata');
+  return onSnapshot(
+    docRef,
+    (snap) => {
+      if (snap.exists()) {
+        onUpdate(snap.data() as BattalionMetadata);
+      }
+    },
+    (error) => {
+      console.error("Error in metadata snapshot listener:", error);
+      onError?.(error);
+    }
+  );
+};
+
 export const learnMetadata = async (
   category: MetadataCategory,
   value: string,
@@ -33,31 +53,23 @@ export const learnMetadata = async (
     if (!cleanValue) return;
 
     const docRef = doc(db, 'battalion_settings', 'metadata');
-    const snap = await getDoc(docRef);
-    
-    // If the document doesn't exist yet, we create it with empty defaults
-    if (!snap.exists()) {
-      await setDoc(docRef, {
-        equipmentTypes: [],
-        platoons: [],
-        locations: {}
-      });
-    }
 
     if (category === 'equipment') {
-      await updateDoc(docRef, {
+      await setDoc(docRef, {
         equipmentTypes: arrayUnion(cleanValue)
-      });
+      }, { merge: true });
     } else if (category === 'platoon') {
-      await updateDoc(docRef, {
+      await setDoc(docRef, {
         platoons: arrayUnion(cleanValue)
-      });
+      }, { merge: true });
     } else if (category === 'location') {
       const cleanContext = platoonContext ? sanitizeInput(platoonContext, 50) : '__default';
       const key = cleanContext || '__default';
-      await updateDoc(docRef, {
-        [`locations.${key}`]: arrayUnion(cleanValue)
-      });
+      await setDoc(docRef, {
+        locations: {
+          [key]: arrayUnion(cleanValue)
+        }
+      }, { merge: true });
     }
   } catch (error) {
     console.error(`Error learning new metadata for ${category}: `, error);
