@@ -1434,21 +1434,12 @@ export default function KashragReportScreen() {
                 {renderStatusBars()}
 
                 <View style={styles.sessionActionRow}>
-                  <TouchableOpacity 
-                    style={[
-                      styles.finalizeReportBtn,
-                      totalBattalionVerified === totalBattalionDevices && totalBattalionDevices > 0 && styles.finalizeReportBtn100
-                    ]} 
-                    onPress={handleArchiveActiveSession}
-                    activeOpacity={0.85}
-                  >
-                    <MaterialCommunityIcons name="lock-check" size={18} color="#FFFFFF" />
-                    <Text style={styles.finalizeReportBtnText}>
-                      {totalBattalionVerified === totalBattalionDevices && totalBattalionDevices > 0
-                        ? '🎉 סיום ונעילת דו"ח (100% הושלם)'
-                        : 'נעל דו"ח והעבר להיסטוריה'}
+                  <View style={[styles.finalizeReportBtn, { backgroundColor: "#F1F5F9", borderWidth: 1, borderColor: "#E2E8F0" }]}>
+                    <MaterialCommunityIcons name="clock-check-outline" size={18} color="#475569" />
+                    <Text style={[styles.finalizeReportBtnText, { color: "#475569" }]}>
+                      הדו"ח ננעל אוטומטית ב-100% אימות או בחצות (00:00)
                     </Text>
-                  </TouchableOpacity>
+                  </View>
                   <TouchableOpacity 
                     style={styles.historyBtn} 
                     onPress={() => setHistoryModalVisible(true)}

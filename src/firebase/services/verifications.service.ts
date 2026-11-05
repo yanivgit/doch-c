@@ -391,7 +391,15 @@ export const archiveSession = async (
       }
     }
 
-    const isComplete = !options?.autoArchivedIncomplete && verifiedCount === totalDevices && totalDevices > 0;
+    const nowMs = Date.now();
+    const isExpired = Boolean(session.expiresAt && typeof session.expiresAt.toMillis === "function" && session.expiresAt.toMillis() < nowMs);
+    const is100Percent = verifiedCount === totalDevices && totalDevices > 0;
+    if (!is100Percent && !isExpired && !options?.autoArchivedIncomplete) {
+      console.warn("Blocked premature archive: session is neither at 100% nor expired at midnight.");
+      return;
+    }
+
+    const isComplete = !options?.autoArchivedIncomplete && is100Percent;
     const historyStatus = isComplete ? 'בוצע' : 'לא הושלם';
 
     const historyData: Omit<VerificationHistory, 'id'> = {
@@ -451,33 +459,16 @@ export const checkAndAutoArchiveIfComplete = async (dohId: string): Promise<bool
     const totalDevices = allDevices.length;
     const verifiedCount = allDevices.filter(d => d.id && verifiedMap[d.id]).length;
 
-    // Sync per-platoon completion status automatically based on 100% platoon verification
+    // Keep all platoons in Firestore as status="active" while session is active so legacy cached clients never auto-archive prematurely
     const platoons = sessionData.platoons || {};
-    const platoonTotals: Record<string, number> = {};
-    const platoonVerified: Record<string, number> = {};
-    allDevices.forEach(d => {
-      const p = (d.assignment || 'ללא שיוך').trim();
-      if (!p) return;
-      platoonTotals[p] = (platoonTotals[p] || 0) + 1;
-      if (d.id && verifiedMap[d.id]) {
-        platoonVerified[p] = (platoonVerified[p] || 0) + 1;
-      }
-    });
-
-    const platoonUpdates: Record<string, any> = {};
-    const now = Timestamp.now();
-    for (const [p, total] of Object.entries(platoonTotals)) {
-      const vCount = platoonVerified[p] || 0;
-      const currentStatus = platoons[p]?.status;
-      if (total > 0 && vCount === total && currentStatus !== 'completed') {
-        platoonUpdates[`platoons.${p}.status`] = 'completed';
-        platoonUpdates[`platoons.${p}.completedAt`] = now;
-      } else if (vCount < total && currentStatus === 'completed') {
-        platoonUpdates[`platoons.${p}.status`] = 'active';
+    const resetUpdates: Record<string, any> = {};
+    for (const [p, pData] of Object.entries(platoons)) {
+      if (pData?.status === 'completed') {
+        resetUpdates[`platoons.${p}.status`] = 'active';
       }
     }
-    if (Object.keys(platoonUpdates).length > 0) {
-      await updateDoc(sessionRef, platoonUpdates);
+    if (Object.keys(resetUpdates).length > 0) {
+      await updateDoc(sessionRef, resetUpdates);
     }
 
     // Only auto-archive the global report when 100% of ALL devices in the battalion are verified
