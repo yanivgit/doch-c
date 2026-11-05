@@ -590,16 +590,14 @@ export default function KashpalReportScreen() {
       </View>
 
       {selectedPlatoon ? (
-        <View style={{ flex: 1 }}>
-          <FlatList
+        <View style={{ flex: 1, minHeight: 0 }}>
+          <ScrollView
             style={styles.mainScroll}
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
-            data={filteredAndSortedDevices}
-            keyExtractor={(device) => device.id || device.tsadiNumber}
-            ListHeaderComponent={
-              <View>
+          >
+            <View>
                 {/* 2. Operational Status Console */}
                 {canVerify ? (
                   <View style={styles.activeSessionBanner}>
@@ -768,8 +766,7 @@ export default function KashpalReportScreen() {
                   </View>
                 )}
               </View>
-            }
-            ListEmptyComponent={
+            {filteredAndSortedDevices.length === 0 ? (
               <View style={styles.emptyContainer}>
                 <Feather name="inbox" size={40} color="#94A3B8" style={{ marginBottom: 10 }} />
                 <Text style={styles.emptyTitle}>לא נמצא ציוד מתאים</Text>
@@ -784,8 +781,9 @@ export default function KashpalReportScreen() {
                   </TouchableOpacity>
                 )}
               </View>
-            }
-            renderItem={({ item: device, index }) => {
+            ) : (
+              filteredAndSortedDevices.map((device, index) => {
+              const itemKey = device.id || `${device.type}_${device.tsadiNumber}_${index}`;
               const isVerified = !!(device.id && (verifiedDevicesMap[device.id] || activeSession?.verifiedDevices?.[device.id]));
               const cat = getDeviceCategory(device.type);
               const fault = device.faultStatus;
@@ -821,7 +819,7 @@ export default function KashpalReportScreen() {
               if (activeTab === 'report') {
                 if (isKit) {
                   return (
-                    <View style={[
+                    <View key={itemKey} style={[
                       styles.card,
                       styles.shakedKitCard,
                       isVerified && styles.cardVerified,
@@ -947,7 +945,7 @@ export default function KashpalReportScreen() {
                 }
 
                 return (
-                  <View style={[
+                  <View key={itemKey} style={[
                     styles.card,
                     isVerified && styles.cardVerified,
                     fault === 'inspection' && styles.cardInspection,
@@ -1035,7 +1033,7 @@ export default function KashpalReportScreen() {
               // MODE B: Full Equipment Inventory Card
               if (isKit) {
                 return (
-                  <View key={device.id || `${device.type}_${device.tsadiNumber}`}>
+                  <View key={itemKey}>
                     {categoryDivider}
                     <View style={[
                       styles.card,
@@ -1172,7 +1170,7 @@ export default function KashpalReportScreen() {
               }
 
               return (
-                <View key={device.id || `${device.type}_${device.tsadiNumber}`}>
+                <View key={itemKey}>
                   {categoryDivider}
                   <View style={[
                     styles.card,
@@ -1274,8 +1272,9 @@ export default function KashpalReportScreen() {
                 </View>
               </View>
               );
-            }}
-          />
+            })
+          )}
+          </ScrollView>
 
           {/* Edit Location Modal */}
           <EditLocationModal
@@ -1352,7 +1351,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8FAFC',
     width: '100%',
-    overflow: 'hidden',
   },
   mainScroll: {
     flex: 1,

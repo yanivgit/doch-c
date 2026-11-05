@@ -1497,13 +1497,13 @@ export default function KashragReportScreen() {
             contentContainerStyle={styles.inventoryListContent}
             keyboardShouldPersistTaps="handled"
             sections={sections}
-            keyExtractor={(item) => item.id || item.tsadiNumber}
+            keyExtractor={(item, index) => item.id || `${item.type}_${item.tsadiNumber || index}`}
             renderItem={renderDeviceItem}
             renderSectionHeader={renderSectionHeader}
             stickySectionHeadersEnabled={false}
-            initialNumToRender={15}
-            maxToRenderPerBatch={10}
-            windowSize={5}
+            initialNumToRender={350}
+            maxToRenderPerBatch={350}
+            windowSize={21}
             ListHeaderComponent={
               <View style={styles.controlsCard}>
                 <View style={styles.searchBar}>
