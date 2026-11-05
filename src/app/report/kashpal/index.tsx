@@ -207,6 +207,12 @@ export default function KashpalReportScreen() {
   }, [activeSession?.id, selectedPlatoon]);
 
   // Status checks for current platoon in today's daily session
+  const verifiedCount = useMemo(() => {
+    return devices.filter(d => d.id && (verifiedDevicesMap[d.id] || activeSession?.verifiedDevices?.[d.id])).length;
+  }, [devices, verifiedDevicesMap, activeSession]);
+
+  const progressPercent = devices.length > 0 ? (verifiedCount / devices.length) * 100 : 0;
+
   const isSessionArchived = useMemo(() => {
     return activeSession?.globalStatus === 'archived';
   }, [activeSession]);
@@ -214,14 +220,14 @@ export default function KashpalReportScreen() {
   const isMyPlatoonCompleted = useMemo(() => {
     return (
       isSessionArchived ||
-      activeSession?.platoons?.[selectedPlatoon || '']?.status === 'completed'
+      (devices.length > 0 && verifiedCount === devices.length)
     );
-  }, [activeSession, selectedPlatoon, isSessionArchived]);
+  }, [isSessionArchived, devices.length, verifiedCount]);
 
   const isMyPlatoonActive = useMemo(() => {
     if (isMyPlatoonCompleted || isSessionArchived) return false;
     return (
-      activeSession?.platoons?.[selectedPlatoon || '']?.status === 'active' || 
+      Boolean(activeSession?.platoons?.[selectedPlatoon || '']) || 
       activeSession?.globalStatus === 'active'
     );
   }, [activeSession, selectedPlatoon, isMyPlatoonCompleted, isSessionArchived]);
@@ -539,8 +545,7 @@ export default function KashpalReportScreen() {
     setLocationFilter('הכל');
   };
 
-  const verifiedCount = devices.filter(d => d.id && (verifiedDevicesMap[d.id] || activeSession?.verifiedDevices?.[d.id])).length;
-  const progressPercent = devices.length > 0 ? (verifiedCount / devices.length) * 100 : 0;
+
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -617,23 +622,9 @@ export default function KashpalReportScreen() {
                     </View>
 
                     {/* Progress Bar Track */}
-                    <View style={styles.progressTrack}>
+                    <View style={[styles.progressTrack, { marginBottom: 0 }]}>
                       <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
                     </View>
-
-                    {/* Submit Report Action Button */}
-                    <TouchableOpacity 
-                      style={styles.submitReportBtn}
-                      onPress={handleEndSession}
-                      activeOpacity={0.88}
-                    >
-                      <MaterialCommunityIcons name="send-check" size={18} color="#FFFFFF" />
-                      <Text style={styles.submitReportBtnText}>
-                        {verifiedCount === devices.length && devices.length > 0 
-                          ? 'סיום ונעילת דו״ח (100% אומת)' 
-                          : 'נעל ושלח דו״ח לקשר״ג'}
-                      </Text>
-                    </TouchableOpacity>
                   </View>
                 ) : isMyPlatoonCompleted || isSessionArchived ? (
                   <View style={styles.completedBanner}>

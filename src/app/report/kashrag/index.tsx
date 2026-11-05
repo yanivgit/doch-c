@@ -791,10 +791,9 @@ export default function KashragReportScreen() {
           const verified = platoonVerified[p] || 0;
           const percentage = total > 0 ? (verified / total) * 100 : 0;
           const platoonData = activeSession.platoons?.[p];
-          const isStarted = !!platoonData;
-          const isCompleted = platoonData?.status === 'completed';
-          const isFullyVerified = isCompleted && verified === total && total > 0;
-          const isCompletedWithMissing = isCompleted && verified < total;
+          const isStarted = !!platoonData || verified > 0;
+          const isFullyVerified = verified === total && total > 0;
+          const isCompletedWithMissing = false;
 
           return (
             <View key={p} style={styles.platoonCard}>

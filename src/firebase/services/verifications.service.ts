@@ -451,21 +451,37 @@ export const checkAndAutoArchiveIfComplete = async (dohId: string): Promise<bool
     const totalDevices = allDevices.length;
     const verifiedCount = allDevices.filter(d => d.id && verifiedMap[d.id]).length;
 
-    // 1. Condition: 100% of all devices in the battalion are verified
-    const is100Percent = verifiedCount === totalDevices && totalDevices > 0;
-
-    // 2. Condition: EVERY platoon in the battalion that has equipment has completed its reporting
+    // Sync per-platoon completion status automatically based on 100% platoon verification
     const platoons = sessionData.platoons || {};
-    const allBattalionPlatoons = Array.from(
-      new Set(
-        allDevices
-          .map(d => (d.assignment || 'ללא שיוך').trim())
-          .filter(Boolean)
-      )
-    );
-    const allPlatoonsCompleted = 
-      allBattalionPlatoons.length > 0 && 
-      allBattalionPlatoons.every(p => platoons[p]?.status === 'completed');
+    const platoonTotals: Record<string, number> = {};
+    const platoonVerified: Record<string, number> = {};
+    allDevices.forEach(d => {
+      const p = (d.assignment || 'ללא שיוך').trim();
+      if (!p) return;
+      platoonTotals[p] = (platoonTotals[p] || 0) + 1;
+      if (d.id && verifiedMap[d.id]) {
+        platoonVerified[p] = (platoonVerified[p] || 0) + 1;
+      }
+    });
+
+    const platoonUpdates: Record<string, any> = {};
+    const now = Timestamp.now();
+    for (const [p, total] of Object.entries(platoonTotals)) {
+      const vCount = platoonVerified[p] || 0;
+      const currentStatus = platoons[p]?.status;
+      if (total > 0 && vCount === total && currentStatus !== 'completed') {
+        platoonUpdates[`platoons.${p}.status`] = 'completed';
+        platoonUpdates[`platoons.${p}.completedAt`] = now;
+      } else if (vCount < total && currentStatus === 'completed') {
+        platoonUpdates[`platoons.${p}.status`] = 'active';
+      }
+    }
+    if (Object.keys(platoonUpdates).length > 0) {
+      await updateDoc(sessionRef, platoonUpdates);
+    }
+
+    // Only auto-archive the global report when 100% of ALL devices in the battalion are verified
+    const is100Percent = verifiedCount === totalDevices && totalDevices > 0;
 
     if (is100Percent) {
       await archiveSession(sessionData, allDevices, {
@@ -478,23 +494,6 @@ export const checkAndAutoArchiveIfComplete = async (dohId: string): Promise<bool
         action: 'CHECKED',
         user: 'מערכת',
         details: `סיום ונעילת דו"ח גדודי מלא - כל ${totalDevices} הפריטים אומתו (100%) והועברו ישירות להיסטוריה כהושלם`,
-        platoon: 'כללי',
-        involvedPlatoons: [],
-        dohId
-      });
-
-      return true;
-    } else if (allPlatoonsCompleted) {
-      await archiveSession(sessionData, allDevices, {
-        completionNotes: `הסתיים על ידי כל הפלוגות (${verifiedCount}/${totalDevices} פריטים אומתו)`
-      });
-
-      await logEvent({
-        deviceId: 'GLOBAL_REPORT',
-        tsadiNumber: 'כללי',
-        action: 'CHECKED',
-        user: 'מערכת',
-        details: `נעילת דו"ח גדודי בסיום כלל הפלוגות - ${verifiedCount}/${totalDevices} פריטים אומתו`,
         platoon: 'כללי',
         involvedPlatoons: [],
         dohId
