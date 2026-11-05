@@ -88,8 +88,26 @@ export function comparePlatoons(a: string | undefined | null, b: string | undefi
  * 6. נרות לילה
  * 7. שאר הציוד (טל 88, מג"ס, רוייפ, סיאף, צרעה, משיב מיקום, מ"כ, מחשב 55ג...)
  */
+export function isShakedKitType(typeName?: string | null): boolean {
+  if (!typeName) return false;
+  const norm = normalizeHebrew(typeName);
+  return norm === 'ערכת שקד' || norm === 'מארז שקד' || norm === 'ערכות שקד';
+}
+
+export function isShakedKitDevice(device?: Device | null): boolean {
+  if (!device) return false;
+  if (isShakedKitType(device.type)) return true;
+  if (device.isKit) {
+    const norm = normalizeHebrew(device.type);
+    if (!norm.includes('טל 100') && !norm.includes('טאבלט') && !norm.includes('מבן')) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function getEquipmentTypePriority(typeName: string | undefined | null, device?: Device): number {
-  if (device?.isKit) return 20;
+  if (isShakedKitDevice(device)) return 20;
 
   if (!typeName) return 9999;
   const norm = normalizeHebrew(typeName);
@@ -100,8 +118,9 @@ export function getEquipmentTypePriority(typeName: string | undefined | null, de
   if (norm.includes('סלולר')) return 10;
 
   // 2. כל המכשירים שקשורים בערכת שקד (ערכת שקד, טל 100, מבן, טאבלט)
-  if (norm.includes('שקד')) return 20;
+  if (isShakedKitType(typeName)) return 20;
   if (norm.includes('טל 100')) return 21;
+  if (norm.includes('מבן חישה')) return 25;
   if (norm.includes('מבן')) return 22;
   if (norm.includes('טאבלט')) return 23;
 
@@ -152,8 +171,8 @@ export function getEquipmentCategoryGroup(deviceOrType: Device | string | undefi
   iconName: string;
 } {
   const typeName = typeof deviceOrType === 'string' ? deviceOrType : deviceOrType?.type;
-  const isKit = typeof deviceOrType === 'object' && (deviceOrType?.isKit || (deviceOrType?.type || '').includes('שקד'));
-  
+  const isKit = typeof deviceOrType === 'object' ? isShakedKitDevice(deviceOrType) : isShakedKitType(typeName);
+
   if (isKit) {
     return { id: 'shaked_kit', order: 20, title: 'ערכות שקד ומרכיביהן', iconName: 'toolbox' };
   }

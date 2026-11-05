@@ -38,7 +38,7 @@ import Snackbar from '../../../components/Snackbar';
 import OfflineBanner from '../../../components/OfflineBanner';
 import { PLUGOT } from '../../../constants/data';
 import { theme } from '../../../theme/theme';
-import { compareEquipmentTypes, getEquipmentTypePriority, getEquipmentCategoryGroup } from '../../../utils';
+import { compareEquipmentTypes, getEquipmentTypePriority, getEquipmentCategoryGroup, isShakedKitDevice } from '../../../utils';
 
 export default function KashpalReportScreen() {
   const router = useRouter();
@@ -323,10 +323,15 @@ export default function KashpalReportScreen() {
         return false;
       }
 
-      // If this device is a member of a Shaked Kit (has parentKitId),
+      // If this device is a member of an active Shaked Kit (has parentKitId),
       // it should NOT appear as its own standalone card in Kashpal!
       // It is rendered inside the Shaked Kit card!
-      if (d.parentKitId) {
+      const hasActiveParentKit = Boolean(
+        d.parentKitId &&
+        d.parentKitId !== d.id &&
+        devices.some(k => k.id === d.parentKitId && isShakedKitDevice(k))
+      );
+      if (hasActiveParentKit) {
         return false;
       }
 
@@ -339,7 +344,7 @@ export default function KashpalReportScreen() {
       const typeMatch = d.type?.toLowerCase().includes(query);
       const linkedMatch = (d.linkedTsadi && d.linkedTsadi.toLowerCase().includes(query)) || (d.linkedType && d.linkedType.toLowerCase().includes(query));
       const kitMatch = Boolean(
-        d.isKit && (
+        isShakedKitDevice(d) && (
           (d.kitName && d.kitName.toLowerCase().includes(query)) ||
           (d.tel100Tsadi && d.tel100Tsadi.toLowerCase().includes(query)) ||
           (d.mabanTsadi && d.mabanTsadi.toLowerCase().includes(query)) ||
@@ -801,7 +806,7 @@ export default function KashpalReportScreen() {
                 </View>
               ) : null;
 
-              const isKit = Boolean(device.isKit || device.type === 'ערכת שקד');
+              const isKit = isShakedKitDevice(device);
               const tel100Tsadi = device.tel100Tsadi;
               const mabanTsadi = device.mabanTsadi;
               const tabletTsadi = device.tabletTsadi;

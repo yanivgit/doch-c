@@ -40,7 +40,7 @@ import AddDeviceModal from '../../../components/AddDeviceModal';
 import TransferDeviceModal from '../../../components/TransferDeviceModal';
 import EditNoteModal from '../../../components/EditNoteModal';
 import LinkMediaModal from '../../../components/LinkMediaModal';
-import ManageShakedKitModal from '../../../components/ManageShakedKitModal';
+import ManageShakedKitModal, { SlotRole } from '../../../components/ManageShakedKitModal';
 import DeviceHistoryModal from '../../../components/DeviceHistoryModal';
 import Snackbar from '../../../components/Snackbar';
 import VerificationHistoryModal from '../../../components/VerificationHistoryModal';
@@ -49,7 +49,7 @@ import DailySummaryModal from '../../../components/DailySummaryModal';
 import ReportFaultModal from '../../../components/ReportFaultModal';
 import ReplaceDeviceModal from '../../../components/ReplaceDeviceModal';
 import OfflineBanner from '../../../components/OfflineBanner';
-import { comparePlatoons, compareEquipmentTypes, compareDevices, getEquipmentCategoryGroup } from '../../../utils';
+import { comparePlatoons, compareEquipmentTypes, compareDevices, getEquipmentCategoryGroup, isShakedKitDevice } from '../../../utils';
 
 const isMediaSupportedHost = (type?: string) => {
   if (!type) return false;
@@ -80,6 +80,12 @@ export default function KashragReportScreen() {
   const [isFaultModalVisible, setIsFaultModalVisible] = useState(false);
   const [replacingDevice, setReplacingDevice] = useState<Device | null>(null);
   const [managingKitDevice, setManagingKitDevice] = useState<Device | null>(null);
+  const [managingKitInitialSlot, setManagingKitInitialSlot] = useState<SlotRole | null>(null);
+
+  const openManageKit = useCallback((device: Device, slot: SlotRole | null = null) => {
+    setManagingKitInitialSlot(slot);
+    setManagingKitDevice(device);
+  }, []);
   
   // Dual-Tab state ('report' vs 'inventory')
   const [activeTab, setActiveTab] = useState<'report' | 'inventory'>('report');
@@ -181,6 +187,26 @@ export default function KashragReportScreen() {
 
   const handleDelete = useCallback((id: string) => {
     const deviceToDelete = devices.find(d => d.id === id);
+    if (isShakedKitDevice(deviceToDelete)) {
+      const kitLabel = deviceToDelete?.kitName || 'ערכת שקד';
+      const msg = `האם למחוק את "${kitLabel}" מ-${deviceToDelete?.assignment || 'ללא שיוך'}?\n(המכשירים שמחוברים לערכה לא יימחקו אלא יחזרו לרשימה כמכשירים רגילים)`;
+      if (Platform.OS === 'web') {
+        if (window.confirm(msg)) {
+          deleteDevice(id).then(fetchDevices);
+        }
+        return;
+      }
+      Alert.alert(
+        'מחיקת ערכת שקד',
+        msg,
+        [
+          { text: 'ביטול', style: 'cancel' },
+          { text: 'מחק ערכה', style: 'destructive', onPress: () => deleteDevice(id).then(fetchDevices) }
+        ]
+      );
+      return;
+    }
+
     const expectedTsadi = deviceToDelete ? String(deviceToDelete.tsadiNumber).trim() : '';
 
     if (Platform.OS === 'web') {
@@ -366,15 +392,21 @@ export default function KashragReportScreen() {
         return acc;
       }
 
-      // If this device is a member of a Shaked Kit (has parentKitId),
+      // If this device is a member of an active Shaked Kit (has parentKitId),
       // it should NOT appear as its own standalone card! It is rendered inside the Shaked Kit card!
-      if (device.parentKitId) {
+      // When not linked to a kit, it appears as a normal standalone device.
+      const hasActiveParentKit = Boolean(
+        device.parentKitId &&
+        device.parentKitId !== device.id &&
+        devices.some(k => k.id === device.parentKitId && isShakedKitDevice(k))
+      );
+      if (hasActiveParentKit) {
         return acc;
       }
 
       const key = groupBy === 'platoons' 
         ? (device.assignment || 'ללא שיוך') 
-        : (device.type || 'אחר');
+        : (isShakedKitDevice(device) ? 'ערכת שקד' : (device.type || 'אחר'));
         
       if (!acc[key]) acc[key] = [];
       acc[key].push(device);
@@ -389,7 +421,7 @@ export default function KashragReportScreen() {
     });
 
     return map;
-  }, [filteredDevices, groupBy]);
+  }, [filteredDevices, groupBy, devices]);
 
   const groupKeys = useMemo(() => {
     return Object.keys(groupedDevices).sort((a, b) => {
@@ -589,11 +621,21 @@ export default function KashragReportScreen() {
           return;
         }
 
-        // Check if this device is a Shaked Kit:
-        const isKit = d.isKit || (d.type || '').includes('שקד');
+        // Skip standalone rendering if this device is already linked inside an active Shaked Kit
+        if (
+          d.parentKitId &&
+          d.parentKitId !== d.id &&
+          devices.some(k => k.id === d.parentKitId && isShakedKitDevice(k))
+        ) {
+          return;
+        }
+
+        // Check if this device is a Shaked Kit container:
+        const isKit = isShakedKitDevice(d);
         if (isKit) {
+          const customName = d.kitName && d.kitName !== 'ערכת שקד' ? ` (${d.kitName})` : '';
           const locationPart = d.location ? ` (${d.location})` : '';
-          reportText += `${d.kitName || d.type || 'ערכת שקד'}${locationPart} :\n`;
+          reportText += `ערכת שקד${customName}${locationPart} :\n`;
           renderedDeviceKeys.add(deviceKey);
 
           // Slot 1: טל 100
@@ -864,7 +906,7 @@ export default function KashragReportScreen() {
     ) : null;
 
     // 1. Specialized Shaked Kit Card
-    if (device.isKit || (device.type || '').includes('שקד')) {
+    if (isShakedKitDevice(device)) {
       const tel100Tsadi = device.tel100Tsadi;
       const mabanTsadi = device.mabanTsadi;
       const tabletTsadi = device.tabletTsadi;
@@ -874,6 +916,9 @@ export default function KashragReportScreen() {
       const tabletDev = tabletTsadi ? devices.find(d => d.id === device.tabletDeviceId || (d.tsadiNumber === tabletTsadi && (d.type || '').includes('טאבלט'))) : null;
 
       const hasAnyFault = tel100Dev?.faultStatus || mabanDev?.faultStatus || tabletDev?.faultStatus;
+      const kitDisplayTitle = device.kitName && device.kitName !== 'ערכת שקד'
+        ? `ערכת שקד (${device.kitName})`
+        : 'ערכת שקד';
 
       return (
         <View key={device.id || `${device.type}_${device.tsadiNumber}`}>
@@ -884,9 +929,9 @@ export default function KashragReportScreen() {
               <View style={styles.deviceTitleRow}>
                 <View style={styles.kitBadge}>
                   <MaterialCommunityIcons name="toolbox" size={13} color="#0284C7" />
-                  <Text style={styles.kitBadgeText}>מארז שקד</Text>
+                  <Text style={styles.kitBadgeText}>ערכת שקד</Text>
                 </View>
-                <Text style={styles.deviceType}>{device.kitName || device.tsadiNumber || 'ערכת שקד'}</Text>
+                <Text style={styles.deviceType}>{kitDisplayTitle}</Text>
               </View>
 
               <View style={styles.deviceMetaRow}>
@@ -913,62 +958,104 @@ export default function KashragReportScreen() {
             )}
           </View>
 
-          {/* 3 Kit Slots Display */}
+          {/* 3 Kit Slots Display - Click any row directly like Magen Michlol */}
           <View style={styles.kitSlotsContainer}>
             {/* Slot 1: טל 100 */}
-            <View style={styles.kitSlotRow}>
+            <TouchableOpacity 
+              style={styles.kitSlotRow}
+              onPress={() => openManageKit(device, 'tel100')}
+              activeOpacity={0.7}
+            >
               <View style={styles.kitSlotIcon}>
                 <Feather name="phone" size={12} color="#0284C7" />
               </View>
               <Text style={styles.kitSlotLabel}>טל 100:</Text>
-              <Text style={[styles.kitSlotValue, !tel100Tsadi && { color: '#94A3B8' }]}>
-                {tel100Tsadi ? `צ׳ ${tel100Tsadi}` : 'חסר'}
-              </Text>
+              {tel100Tsadi ? (
+                <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.kitSlotValue}>צ׳ {tel100Tsadi}</Text>
+                  <View style={styles.linkedMediaActionPill}>
+                    <Text style={styles.linkedMediaActionText}>החלף/נתק</Text>
+                  </View>
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 4 }}>
+                  <Feather name="plus-circle" size={12} color="#0284C7" />
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#0284C7' }}>+ חבר טל 100</Text>
+                </View>
+              )}
               {tel100Dev?.faultStatus && (
                 <View style={styles.slotFaultPill}>
                   <Text style={styles.slotFaultText}>{tel100Dev.faultStatus === 'replacement' ? 'להחלפה' : 'בדיקה'}</Text>
                 </View>
               )}
-            </View>
+            </TouchableOpacity>
 
             {/* Slot 2: מבן */}
-            <View style={styles.kitSlotRow}>
+            <TouchableOpacity 
+              style={styles.kitSlotRow}
+              onPress={() => openManageKit(device, 'maban')}
+              activeOpacity={0.7}
+            >
               <View style={styles.kitSlotIcon}>
                 <MaterialCommunityIcons name="power-plug" size={12} color="#0284C7" />
               </View>
               <Text style={styles.kitSlotLabel}>מבן:</Text>
-              <Text style={[styles.kitSlotValue, !mabanTsadi && { color: '#94A3B8' }]}>
-                {mabanTsadi ? `צ׳ ${mabanTsadi}` : 'חסר'}
-              </Text>
+              {mabanTsadi ? (
+                <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.kitSlotValue}>צ׳ {mabanTsadi}</Text>
+                  <View style={styles.linkedMediaActionPill}>
+                    <Text style={styles.linkedMediaActionText}>החלף/נתק</Text>
+                  </View>
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 4 }}>
+                  <Feather name="plus-circle" size={12} color="#0284C7" />
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#0284C7' }}>+ חבר מבן</Text>
+                </View>
+              )}
               {mabanDev?.faultStatus && (
                 <View style={styles.slotFaultPill}>
                   <Text style={styles.slotFaultText}>{mabanDev.faultStatus === 'replacement' ? 'להחלפה' : 'בדיקה'}</Text>
                 </View>
               )}
-            </View>
+            </TouchableOpacity>
 
             {/* Slot 3: טאבלט */}
-            <View style={styles.kitSlotRow}>
+            <TouchableOpacity 
+              style={styles.kitSlotRow}
+              onPress={() => openManageKit(device, 'tablet')}
+              activeOpacity={0.7}
+            >
               <View style={styles.kitSlotIcon}>
                 <Feather name="tablet" size={12} color="#0284C7" />
               </View>
               <Text style={styles.kitSlotLabel}>טאבלט:</Text>
-              <Text style={[styles.kitSlotValue, !tabletTsadi && { color: '#94A3B8' }]}>
-                {tabletTsadi ? `צ׳ ${tabletTsadi}` : 'חסר'}
-              </Text>
+              {tabletTsadi ? (
+                <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.kitSlotValue}>צ׳ {tabletTsadi}</Text>
+                  <View style={styles.linkedMediaActionPill}>
+                    <Text style={styles.linkedMediaActionText}>החלף/נתק</Text>
+                  </View>
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 4 }}>
+                  <Feather name="plus-circle" size={12} color="#0284C7" />
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#0284C7' }}>+ חבר טאבלט</Text>
+                </View>
+              )}
               {tabletDev?.faultStatus && (
                 <View style={styles.slotFaultPill}>
                   <Text style={styles.slotFaultText}>{tabletDev.faultStatus === 'replacement' ? 'להחלפה' : 'בדיקה'}</Text>
                 </View>
               )}
-            </View>
+            </TouchableOpacity>
           </View>
 
           {/* Action Strip */}
           <View style={styles.deviceActionsStrip}>
             <TouchableOpacity 
               style={[styles.actionBtnIcon, styles.actionBtnIconBlue]} 
-              onPress={() => setManagingKitDevice(device)}
+              onPress={() => openManageKit(device, null)}
               activeOpacity={0.8}
               accessibilityLabel="ניהול פריטי הערכה"
             >
@@ -1197,7 +1284,7 @@ export default function KashragReportScreen() {
       </View>
     </View>
     );
-  }, [confirmMarkFixed, handleDelete, groupBy]);
+  }, [confirmMarkFixed, handleDelete, groupBy, devices, openManageKit]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -1575,10 +1662,13 @@ export default function KashragReportScreen() {
 
       <ManageShakedKitModal
         visible={!!managingKitDevice}
-        kitDevice={managingKitDevice}
-        onClose={() => setManagingKitDevice(null)}
-        onUpdated={() => {
+        kitDevice={(managingKitDevice && devices.find(d => d.id === managingKitDevice.id)) || managingKitDevice}
+        initialSlot={managingKitInitialSlot}
+        onClose={() => {
           setManagingKitDevice(null);
+          setManagingKitInitialSlot(null);
+        }}
+        onUpdated={() => {
           fetchDevices();
         }}
         allDevices={devices}

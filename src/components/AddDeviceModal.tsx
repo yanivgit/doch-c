@@ -25,6 +25,7 @@ import {
 } from '../firebase/api';
 import { useApp } from '../context/AppContext';
 import SearchableDropdown from './SearchableDropdown';
+import { isShakedKitType } from '../utils';
 
 interface AddDeviceModalProps {
   visible: boolean;
@@ -86,7 +87,7 @@ export default function AddDeviceModal({ visible, onClose, onAdded, allDevices =
     }
   }, [visible, allDevices, selectedDohId]);
 
-  const isShakedKit = equipmentType.trim() === 'ערכת שקד' || equipmentType.trim().includes('שקד');
+  const isShakedKit = isShakedKitType(equipmentType);
 
   // Available existing devices not yet assigned to any kit
   const availableTel100 = useMemo(() => {
@@ -96,9 +97,10 @@ export default function AddDeviceModal({ visible, onClose, onAdded, allDevices =
   }, [effectiveDevices]);
 
   const availableMaban = useMemo(() => {
-    return effectiveDevices.filter(d => 
-      (d.type || '').toLowerCase().includes('מבן') && !d.parentKitId
-    );
+    return effectiveDevices.filter(d => {
+      const t = (d.type || '').toLowerCase();
+      return t.includes('מבן') && !t.includes('חישה') && !d.parentKitId;
+    });
   }, [effectiveDevices]);
 
   const availableTablet = useMemo(() => {
@@ -107,24 +109,11 @@ export default function AddDeviceModal({ visible, onClose, onAdded, allDevices =
     );
   }, [effectiveDevices]);
 
-  const hasAnyKitSlot = useMemo(() => {
-    if (!isShakedKit) return false;
-    const hasTel100 = tel100Mode === 'new' ? tel100Tsadi.trim().length > 0 : Boolean(tel100SelectedId);
-    const hasMaban = mabanMode === 'new' ? mabanTsadi.trim().length > 0 : Boolean(mabanSelectedId);
-    const hasTablet = tabletMode === 'new' ? tabletTsadi.trim().length > 0 : Boolean(tabletSelectedId);
-    return hasTel100 || hasMaban || hasTablet;
-  }, [isShakedKit, tel100Mode, tel100Tsadi, tel100SelectedId, mabanMode, mabanTsadi, mabanSelectedId, tabletMode, tabletTsadi, tabletSelectedId]);
-
   const isValid = isShakedKit 
-    ? hasAnyKitSlot 
+    ? true 
     : (equipmentType.trim() !== '' && tzadeNumber.trim() !== '');
 
   const handleShakedKitSubmit = async () => {
-    if (!hasAnyKitSlot) {
-      Alert.alert('חסר ציוד בערכה', 'אנא הזן לפחות צ\' אחד או בחר מכשיר קיים עבור אחד ממרכיבי הערכה (טל 100, מבן או טאבלט).');
-      return;
-    }
-
     setLoading(true);
     setTsadiError(null);
 
@@ -143,22 +132,15 @@ export default function AddDeviceModal({ visible, onClose, onAdded, allDevices =
         return;
       }
 
-      // 2. Check conflict against existing battalion devices
-      for (const tsadi of newTsadis) {
-        const conflict = effectiveDevices.find(d => (d.tsadiNumber || '').trim().toLowerCase() === tsadi.toLowerCase());
-        if (conflict) {
-          Alert.alert(
-            'צ׳ כפול במצבה',
-            `מספר צ׳ ${tsadi} כבר שייך ל-${conflict.type} ב-${conflict.assignment || 'ללא שיוך'}.`
-          );
-          setLoading(false);
-          return;
-        }
-      }
-
       let tel100Slot: ShakedKitSlotInput | undefined;
       if (tel100Mode === 'new' && tel100Tsadi.trim()) {
-        tel100Slot = { mode: 'new', tsadiNumber: tel100Tsadi.trim() };
+        const cleanT = tel100Tsadi.trim();
+        const existing = effectiveDevices.find(d => (d.tsadiNumber || '').trim().toLowerCase() === cleanT.toLowerCase());
+        if (existing) {
+          tel100Slot = { mode: 'existing', tsadiNumber: existing.tsadiNumber, deviceId: existing.id };
+        } else {
+          tel100Slot = { mode: 'new', tsadiNumber: cleanT };
+        }
       } else if (tel100Mode === 'existing' && tel100SelectedId) {
         const dev = effectiveDevices.find(d => d.id === tel100SelectedId);
         if (dev) tel100Slot = { mode: 'existing', tsadiNumber: dev.tsadiNumber, deviceId: dev.id };
@@ -166,7 +148,13 @@ export default function AddDeviceModal({ visible, onClose, onAdded, allDevices =
 
       let mabanSlot: ShakedKitSlotInput | undefined;
       if (mabanMode === 'new' && mabanTsadi.trim()) {
-        mabanSlot = { mode: 'new', tsadiNumber: mabanTsadi.trim() };
+        const cleanM = mabanTsadi.trim();
+        const existing = effectiveDevices.find(d => (d.tsadiNumber || '').trim().toLowerCase() === cleanM.toLowerCase());
+        if (existing) {
+          mabanSlot = { mode: 'existing', tsadiNumber: existing.tsadiNumber, deviceId: existing.id };
+        } else {
+          mabanSlot = { mode: 'new', tsadiNumber: cleanM };
+        }
       } else if (mabanMode === 'existing' && mabanSelectedId) {
         const dev = effectiveDevices.find(d => d.id === mabanSelectedId);
         if (dev) mabanSlot = { mode: 'existing', tsadiNumber: dev.tsadiNumber, deviceId: dev.id };
@@ -174,7 +162,13 @@ export default function AddDeviceModal({ visible, onClose, onAdded, allDevices =
 
       let tabletSlot: ShakedKitSlotInput | undefined;
       if (tabletMode === 'new' && tabletTsadi.trim()) {
-        tabletSlot = { mode: 'new', tsadiNumber: tabletTsadi.trim() };
+        const cleanTab = tabletTsadi.trim();
+        const existing = effectiveDevices.find(d => (d.tsadiNumber || '').trim().toLowerCase() === cleanTab.toLowerCase());
+        if (existing) {
+          tabletSlot = { mode: 'existing', tsadiNumber: existing.tsadiNumber, deviceId: existing.id };
+        } else {
+          tabletSlot = { mode: 'new', tsadiNumber: cleanTab };
+        }
       } else if (tabletMode === 'existing' && tabletSelectedId) {
         const dev = effectiveDevices.find(d => d.id === tabletSelectedId);
         if (dev) tabletSlot = { mode: 'existing', tsadiNumber: dev.tsadiNumber, deviceId: dev.id };
@@ -438,8 +432,8 @@ export default function AddDeviceModal({ visible, onClose, onAdded, allDevices =
                       <MaterialCommunityIcons name="toolbox" size={18} color="#0284C7" />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.kitSpecialTitle}>מארז ערכת שקד (3 מכשירי צ')</Text>
-                      <Text style={styles.kitSpecialSub}>ערכת שקד מאגדת תחתיה 3 מכשירים: טל 100, מבן וטאבלט</Text>
+                      <Text style={styles.kitSpecialTitle}>הוספת ערכת שקד (ללא צורך בצ׳ לערכה)</Text>
+                      <Text style={styles.kitSpecialSub}>ניתן להוסיף ערכה ריקה ולחבר אליה מכשירים אחר כך מתוך הרשימה, או לשייך אליה מכשירים (טל 100, מבן, טאבלט) כבר עכשיו:</Text>
                     </View>
                   </View>
 

@@ -692,7 +692,15 @@ export const createShakedKit = async (input: CreateShakedKitInput, user?: string
 
       let memberId = slot.deviceId;
 
-      if (slot.mode === 'new' || !memberId) {
+      // If no deviceId was passed (user typed Tsadi manually), check if it already exists in Firestore
+      if (!memberId) {
+        const existing = await findDeviceByTsadi(cleanTsadi, cleanDohId || undefined);
+        if (existing && existing.id && existing.id !== kitId) {
+          memberId = existing.id;
+        }
+      }
+
+      if (!memberId) {
         // Create new device document
         memberId = await addDevice({
           type: expectedType,
@@ -798,6 +806,9 @@ export const linkKitMember = async (
   user?: string
 ) => {
   try {
+    if (kitId === memberDeviceId) {
+      throw new Error('לא ניתן לקשר את הערכה לעצמה.');
+    }
     const kitRef = doc(db, 'devices', kitId);
     const memberRef = doc(db, 'devices', memberDeviceId);
 
@@ -815,7 +826,7 @@ export const linkKitMember = async (
 
     // Unlink old device in this slot if exists
     const oldMemberId = kitData[`${role}DeviceId` as keyof Device] as string | undefined;
-    if (oldMemberId && oldMemberId !== memberDeviceId) {
+    if (oldMemberId && oldMemberId !== memberDeviceId && oldMemberId !== kitId) {
       try {
         await updateDoc(doc(db, 'devices', oldMemberId), {
           parentKitId: deleteField(),
@@ -823,6 +834,35 @@ export const linkKitMember = async (
         });
       } catch (e) {
         console.error("Error unlinking previous kit slot device:", e);
+      }
+    }
+
+    // If member was previously linked to another kit, clear that previous kit's slot
+    if (memberData.parentKitId && memberData.parentKitId !== kitId) {
+      try {
+        const prevKitRef = doc(db, 'devices', memberData.parentKitId);
+        const prevKitSnap = await getDoc(prevKitRef);
+        if (prevKitSnap.exists()) {
+          const prevKitData = prevKitSnap.data() as Device;
+          const prevUpdates: any = {};
+          if (prevKitData.tel100DeviceId === memberDeviceId) {
+            prevUpdates.tel100DeviceId = deleteField();
+            prevUpdates.tel100Tsadi = deleteField();
+          }
+          if (prevKitData.mabanDeviceId === memberDeviceId) {
+            prevUpdates.mabanDeviceId = deleteField();
+            prevUpdates.mabanTsadi = deleteField();
+          }
+          if (prevKitData.tabletDeviceId === memberDeviceId) {
+            prevUpdates.tabletDeviceId = deleteField();
+            prevUpdates.tabletTsadi = deleteField();
+          }
+          if (Object.keys(prevUpdates).length > 0) {
+            await updateDoc(prevKitRef, prevUpdates);
+          }
+        }
+      } catch (e) {
+        console.error("Error clearing previous kit slot:", e);
       }
     }
 

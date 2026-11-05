@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -22,9 +22,12 @@ import {
 import { theme } from '../theme/theme';
 import { useApp } from '../context/AppContext';
 
+export type SlotRole = 'tel100' | 'maban' | 'tablet';
+
 interface ManageShakedKitModalProps {
   kitDevice: Device | null;
   visible: boolean;
+  initialSlot?: SlotRole | null;
   onClose: () => void;
   onUpdated: () => void;
   allDevices: Device[];
@@ -32,11 +35,10 @@ interface ManageShakedKitModalProps {
   onReplaceDevice: (device: Device) => void;
 }
 
-type SlotRole = 'tel100' | 'maban' | 'tablet';
-
 export default function ManageShakedKitModal({
   kitDevice,
   visible,
+  initialSlot = null,
   onClose,
   onUpdated,
   allDevices = [],
@@ -47,10 +49,17 @@ export default function ManageShakedKitModal({
   const [loading, setLoading] = useState(false);
 
   // Active editing slot for replacement/linking
-  const [activeSlot, setActiveSlot] = useState<SlotRole | null>(null);
+  const [activeSlot, setActiveSlot] = useState<SlotRole | null>(initialSlot);
   const [newTsadiInput, setNewTsadiInput] = useState('');
   const [selectedExistingId, setSelectedExistingId] = useState<string | null>(null);
-  const [slotMode, setSlotMode] = useState<'new' | 'existing'>('new');
+
+  useEffect(() => {
+    if (visible) {
+      setActiveSlot(initialSlot || null);
+      setNewTsadiInput('');
+      setSelectedExistingId(null);
+    }
+  }, [visible, initialSlot, kitDevice?.id]);
 
   // Member devices
   const tel100Device = useMemo(() => {
@@ -68,14 +77,33 @@ export default function ManageShakedKitModal({
     return allDevices.find(d => d.id === kitDevice.tabletDeviceId) || null;
   }, [allDevices, kitDevice]);
 
-  // Available free devices for active slot
+  // Available free devices for active slot (prioritizing same platoon)
   const availableForActiveSlot = useMemo(() => {
     if (!activeSlot) return [];
     const roleTypeName = activeSlot === 'tel100' ? 'טל 100' : (activeSlot === 'maban' ? 'מבן' : 'טאבלט');
-    return allDevices.filter(d => 
-      (d.type || '').toLowerCase().includes(roleTypeName.toLowerCase()) && !d.parentKitId
-    );
-  }, [allDevices, activeSlot]);
+    const q = newTsadiInput.trim().toLowerCase();
+
+    return allDevices
+      .filter(d => {
+        if (d.id === kitDevice?.id) return false;
+        if (d.parentKitId && d.parentKitId !== kitDevice?.id) return false;
+        const t = (d.type || '').toLowerCase();
+        if (activeSlot === 'maban' && t.includes('חישה')) return false;
+        if (!t.includes(roleTypeName.toLowerCase())) return false;
+        if (!q) return true;
+        return (
+          (d.tsadiNumber || '').toLowerCase().includes(q) ||
+          (d.assignment || '').toLowerCase().includes(q) ||
+          (d.location || '').toLowerCase().includes(q)
+        );
+      })
+      .sort((a, b) => {
+        const aSame = a.assignment === kitDevice?.assignment ? 0 : 1;
+        const bSame = b.assignment === kitDevice?.assignment ? 0 : 1;
+        if (aSame !== bSame) return aSame - bSame;
+        return (a.tsadiNumber || '').localeCompare(b.tsadiNumber || '', undefined, { numeric: true });
+      });
+  }, [allDevices, activeSlot, kitDevice?.id, kitDevice?.assignment, newTsadiInput]);
 
   if (!visible || !kitDevice) return null;
 
@@ -83,7 +111,6 @@ export default function ManageShakedKitModal({
     setActiveSlot(role);
     setNewTsadiInput('');
     setSelectedExistingId(null);
-    setSlotMode('new');
   };
 
   const handleCancelSlotEdit = () => {
@@ -126,39 +153,41 @@ export default function ManageShakedKitModal({
     );
   };
 
-  const handleSaveSlot = async () => {
+  const handleSaveSlot = async (directDeviceId?: string) => {
     if (!kitDevice.id || !activeSlot) return;
     const kitId = kitDevice.id;
     const roleTypeName = activeSlot === 'tel100' ? 'טל 100' : (activeSlot === 'maban' ? 'מבן' : 'טאבלט');
 
     setLoading(true);
     try {
-      let targetDeviceId = selectedExistingId;
+      let targetDeviceId = directDeviceId || selectedExistingId;
 
-      if (slotMode === 'new') {
+      if (!targetDeviceId) {
         const cleanTsadi = newTsadiInput.trim();
         if (!cleanTsadi) {
-          Alert.alert('חסר מספר צ׳', 'אנא הקלד מספר צ׳ תקין.');
+          Alert.alert('חסר מספר צ׳', 'אנא בחר מכשיר מהרשימה או הקלד מספר צ׳.');
           setLoading(false);
           return;
         }
 
-        const conflict = allDevices.find(d => (d.tsadiNumber || '').trim().toLowerCase() === cleanTsadi.toLowerCase());
-        if (conflict) {
-          Alert.alert('צ׳ כפול במצבה', `מספר צ׳ ${cleanTsadi} כבר קיים במערכת (${conflict.type} ב-${conflict.assignment || 'ללא שיוך'}).`);
-          setLoading(false);
-          return;
-        }
+        // Check if a device with this Tsadi already exists in the database
+        const existing = allDevices.find(
+          d => d.id !== kitId && (d.tsadiNumber || '').trim().toLowerCase() === cleanTsadi.toLowerCase()
+        );
 
-        targetDeviceId = await addDevice({
-          type: roleTypeName,
-          tsadiNumber: cleanTsadi,
-          assignment: kitDevice.assignment,
-          location: kitDevice.location || '',
-          dohId: selectedDohId || kitDevice.dohId || '',
-          parentKitId: kitId,
-          kitRole: activeSlot
-        });
+        if (existing && existing.id) {
+          targetDeviceId = existing.id;
+        } else {
+          targetDeviceId = await addDevice({
+            type: roleTypeName,
+            tsadiNumber: cleanTsadi,
+            assignment: kitDevice.assignment,
+            location: kitDevice.location || '',
+            dohId: selectedDohId || kitDevice.dohId || '',
+            parentKitId: kitId,
+            kitRole: activeSlot
+          });
+        }
       }
 
       if (!targetDeviceId) {
@@ -168,8 +197,9 @@ export default function ManageShakedKitModal({
       }
 
       await linkKitMember(kitId, activeSlot, targetDeviceId, userRole === 'Kashpal' ? 'קשפ"ל' : 'קשר"ג');
-      Alert.alert('הצלחה', `${roleTypeName} קושר לערכה בהצלחה!`);
       setActiveSlot(null);
+      setNewTsadiInput('');
+      setSelectedExistingId(null);
       onUpdated();
     } catch (e: any) {
       console.error("Error linking kit slot:", e);
@@ -201,7 +231,7 @@ export default function ManageShakedKitModal({
             <View>
               <Text style={styles.slotRoleText}>{roleName}</Text>
               <Text style={[styles.slotTsadiText, !isPresent && { color: '#94A3B8' }]}>
-                {isPresent ? `צ׳ ${tsadiDisplay}` : 'לא הוגדר (פנוי)'}
+                {isPresent ? `צ׳ ${tsadiDisplay}` : 'לא מחובר (פנוי)'}
               </Text>
             </View>
           </View>
@@ -273,71 +303,68 @@ export default function ManageShakedKitModal({
           )}
         </View>
 
-        {/* Inline editor when this slot is being changed/added */}
+        {/* Inline editor when this slot is being changed/added (unified like LinkMediaModal) */}
         {isEditingThisSlot && (
           <View style={styles.inlineEditor}>
-            <View style={styles.modeToggleRow}>
-              <TouchableOpacity 
-                style={[styles.modeToggleBtn, slotMode === 'new' && styles.modeToggleBtnActive]}
-                onPress={() => setSlotMode('new')}
-              >
-                <Text style={[styles.modeToggleText, slotMode === 'new' && styles.modeToggleTextActive]}>
-                  + צ׳ חדש
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.modeToggleBtn, slotMode === 'existing' && styles.modeToggleBtnActive]}
-                onPress={() => setSlotMode('existing')}
-              >
-                <Text style={[styles.modeToggleText, slotMode === 'existing' && styles.modeToggleTextActive]}>
-                  בחר פנוי מהמצבה ({availableForActiveSlot.length})
-                </Text>
-              </TouchableOpacity>
-            </View>
+            <TextInput
+              style={styles.input}
+              placeholder={`הקלד מספר צ׳ של ${roleName} (לחיפוש או יצירה חדשה)...`}
+              placeholderTextColor="#94A3B8"
+              value={newTsadiInput}
+              onChangeText={(val) => {
+                setNewTsadiInput(val);
+                setSelectedExistingId(null);
+              }}
+              keyboardType="numeric"
+              inputMode="numeric"
+              textAlign="right"
+            />
 
-            {slotMode === 'new' ? (
-              <TextInput
-                style={styles.input}
-                placeholder={`הקלד מספר צ׳ של ה-${roleName}...`}
-                placeholderTextColor="#94A3B8"
-                value={newTsadiInput}
-                onChangeText={setNewTsadiInput}
-                keyboardType="numeric"
-                inputMode="numeric"
-                textAlign="right"
-              />
-            ) : (
-              <View>
-                {availableForActiveSlot.length === 0 ? (
-                  <Text style={styles.noAvailableText}>אין {roleName} פנוי במצבה (בחר בצ׳ חדש)</Text>
-                ) : (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.devicesScroll}>
-                    {availableForActiveSlot.map(item => (
+            <View style={{ marginBottom: 8 }}>
+              <Text style={{ fontSize: 11, color: '#64748B', textAlign: 'right', marginBottom: 4, fontWeight: '600' }}>
+                או בחר {roleName} פנוי מהמצבה ({availableForActiveSlot.length}):
+              </Text>
+              {availableForActiveSlot.length === 0 ? (
+                <Text style={styles.noAvailableText}>
+                  {newTsadiInput.trim()
+                    ? `צ׳ ${newTsadiInput.trim()} לא נמצא ברשימת הפנויים — לחץ על "חבר ${roleName}" כדי ליצור או לקשר אותו`
+                    : `אין ${roleName} פנוי במצבה — הקלד צ׳ למעלה כדי להוסיף`}
+                </Text>
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.devicesScroll}>
+                  {availableForActiveSlot.map(item => {
+                    const isSelected = selectedExistingId === item.id;
+                    return (
                       <TouchableOpacity
                         key={item.id}
-                        style={[styles.devicePill, selectedExistingId === item.id && styles.devicePillSelected]}
-                        onPress={() => setSelectedExistingId(item.id || null)}
+                        style={[styles.devicePill, isSelected && styles.devicePillSelected]}
+                        onPress={() => {
+                          setSelectedExistingId(isSelected ? null : (item.id || null));
+                          if (!isSelected && item.tsadiNumber) {
+                            setNewTsadiInput(item.tsadiNumber);
+                          }
+                        }}
                       >
-                        <Text style={[styles.devicePillText, selectedExistingId === item.id && styles.devicePillTextSelected]}>
-                          צ׳ {item.tsadiNumber} ({item.assignment})
+                        <Text style={[styles.devicePillText, isSelected && styles.devicePillTextSelected]}>
+                          צ׳ {item.tsadiNumber} ({item.assignment}{item.location ? ` • ${item.location}` : ''})
                         </Text>
                       </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                )}
-              </View>
-            )}
+                    );
+                  })}
+                </ScrollView>
+              )}
+            </View>
 
             <View style={styles.inlineActions}>
               <TouchableOpacity 
                 style={styles.inlineSaveBtn} 
-                onPress={handleSaveSlot}
+                onPress={() => handleSaveSlot()}
                 disabled={loading}
               >
                 {loading ? (
                   <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
-                  <Text style={styles.inlineSaveBtnText}>שמור {roleName}</Text>
+                  <Text style={styles.inlineSaveBtnText}>חבר {roleName} לערכה</Text>
                 )}
               </TouchableOpacity>
 
