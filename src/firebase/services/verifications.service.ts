@@ -454,12 +454,18 @@ export const checkAndAutoArchiveIfComplete = async (dohId: string): Promise<bool
     // 1. Condition: 100% of all devices in the battalion are verified
     const is100Percent = verifiedCount === totalDevices && totalDevices > 0;
 
-    // 2. Condition: All platoons in the session have completed their reporting
+    // 2. Condition: EVERY platoon in the battalion that has equipment has completed its reporting
     const platoons = sessionData.platoons || {};
-    const sessionPlatoonKeys = Object.keys(platoons);
+    const allBattalionPlatoons = Array.from(
+      new Set(
+        allDevices
+          .map(d => (d.assignment || 'ללא שיוך').trim())
+          .filter(Boolean)
+      )
+    );
     const allPlatoonsCompleted = 
-      sessionPlatoonKeys.length > 0 && 
-      sessionPlatoonKeys.every(p => platoons[p]?.status === 'completed');
+      allBattalionPlatoons.length > 0 && 
+      allBattalionPlatoons.every(p => platoons[p]?.status === 'completed');
 
     if (is100Percent) {
       await archiveSession(sessionData, allDevices, {
